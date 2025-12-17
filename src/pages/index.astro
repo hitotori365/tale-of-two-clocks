@@ -1,11 +1,214 @@
 ---
-import Welcome from '../components/Welcome.astro';
-import Layout from '../layouts/Layout.astro';
-
-// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
-// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
+import "../styles/global.css";
 ---
 
-<Layout>
-	<Welcome />
-</Layout>
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+    <title>VexFlow Tutorial - 音符と音の同期</title>
+  </head>
+  <body>
+    <main>
+      <div class="p-8 max-w-4xl mx-auto">
+        <h1 class="text-3xl mb-8 text-gray-800">音符と音の同期</h1>
+
+        <div id="notation"></div>
+        <button
+          id="play-button"
+          disabled
+          class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+        >
+          読み込み中...
+        </button>
+      </div>
+    </main>
+
+    <script>
+      import { Renderer, Stave, StaveNote, Voice, Formatter } from "vexflow";
+      import { AudioPlayer } from "../utils/audioPlayer";
+
+      // 型定義
+      type Note = { keys: string[]; duration: number };
+      type VexFlowContext = {
+        renderer: Renderer;
+        context: any;
+        stave: Stave;
+      };
+
+      // 定数
+      const TEMPO = 120;
+      const BEAT_DURATION = 60 / TEMPO;
+      const CANVAS_WIDTH = 500;
+      const CANVAS_HEIGHT = 200;
+      const STAVE_CONFIG = { x: 10, y: 40, width: 400 };
+
+      // 音符データの作成
+      const createNoteData = (): Note[] => [
+        { keys: ["c/4"], duration: 0.5 },
+        { keys: ["d/4"], duration: 0.5 },
+        { keys: ["e/4"], duration: 0.5 },
+        { keys: ["f/4"], duration: 0.5 },
+      ];
+
+      // VexFlow音符の作成
+      const createVexNotes = (): StaveNote[] => [
+        new StaveNote({ keys: ["c/4"], duration: "q" }),
+        new StaveNote({ keys: ["d/4"], duration: "q" }),
+        new StaveNote({ keys: ["e/4"], duration: "q" }),
+        new StaveNote({ keys: ["f/4"], duration: "q" }),
+      ];
+
+      // 音符のスタイル設定
+      const styleNote = (note: StaveNote, isPlaying: boolean): StaveNote => {
+        const style = isPlaying
+          ? { fillStyle: "red", strokeStyle: "red" }
+          : { fillStyle: "black", strokeStyle: "black" };
+        note.setStyle(style);
+        return note;
+      };
+
+      // すべての音符にスタイルを適用
+      const styleAllNotes = (
+        notes: StaveNote[],
+        playingIndex?: number,
+      ): StaveNote[] =>
+        notes.map((note, index) => styleNote(note, index === playingIndex));
+
+      // VexFlowコンテキストの初期化
+      const initializeVexFlow = (container: HTMLElement): VexFlowContext => {
+        const renderer = new Renderer(container as HTMLDivElement, Renderer.Backends.SVG);
+        renderer.resize(CANVAS_WIDTH, CANVAS_HEIGHT);
+        const context = renderer.getContext();
+
+        const stave = new Stave(
+          STAVE_CONFIG.x,
+          STAVE_CONFIG.y,
+          STAVE_CONFIG.width,
+        );
+        stave.addClef("treble").addTimeSignature("4/4");
+        stave.setContext(context).draw();
+
+        return { renderer, context, stave };
+      };
+
+      // 音符の描画
+      const drawNotes = (vexFlow: VexFlowContext, notes: StaveNote[]): void => {
+        const voice = new Voice({ numBeats: 4, beatValue: 4 });
+        voice.addTickables(notes);
+
+        new Formatter().joinVoices([voice]).format([voice], 350);
+        voice.draw(vexFlow.context, vexFlow.stave);
+      };
+
+      // 楽譜の再描画
+      const renderNotation = (
+        container: HTMLElement,
+        vexNotes: StaveNote[],
+        playingIndex?: number,
+      ): void => {
+        container.innerHTML = "";
+        const vexFlow = initializeVexFlow(container);
+        const styledNotes = styleAllNotes(vexNotes, playingIndex);
+        drawNotes(vexFlow, styledNotes);
+      };
+
+      // 遅延実行のスケジューリング
+      const scheduleAction = (action: () => void, delayMs: number): number =>
+        window.setTimeout(action, delayMs);
+
+      // 音符再生のスケジューリング
+      const scheduleNotePlay = (
+        note: Note,
+        index: number,
+        delay: number,
+        audioPlayer: AudioPlayer,
+        onNoteStart: (index: number) => void,
+      ): number => {
+        scheduleAction(() => {
+          onNoteStart(index);
+          audioPlayer.playChord(note.keys, note.duration * BEAT_DURATION);
+        }, delay * 1000);
+
+        return delay + note.duration * BEAT_DURATION;
+      };
+
+      // すべての音符の再生
+      const playAllNotes = (
+        notes: Note[],
+        audioPlayer: AudioPlayer,
+        onNoteStart: (index: number) => void,
+        onComplete: () => void,
+      ): void => {
+        const totalDelay = notes.reduce(
+          (delay, note, index) =>
+            scheduleNotePlay(note, index, delay, audioPlayer, onNoteStart),
+          0,
+        );
+
+        scheduleAction(onComplete, totalDelay * 1000);
+      };
+
+      // ボタンの状態を更新
+      const updateButton = (
+        button: HTMLButtonElement,
+        text: string,
+        disabled: boolean,
+      ): void => {
+        button.textContent = text;
+        button.disabled = disabled;
+      };
+
+      // メイン初期化関数
+      const initialize = async (): Promise<void> => {
+        const notationEl = document.querySelector<HTMLDivElement>("#notation");
+        const playButton =
+          document.querySelector<HTMLButtonElement>("#play-button");
+
+        if (!notationEl || !playButton) return;
+
+        const audioPlayer = new AudioPlayer();
+        const notes = createNoteData();
+        const vexNotes = createVexNotes();
+
+        // 初期描画
+        renderNotation(notationEl, vexNotes);
+        updateButton(playButton, "再生", false);
+
+        // 再生ボタンのイベントハンドラ
+        playButton.addEventListener("click", async () => {
+          updateButton(playButton, "再生中...", true);
+
+          await audioPlayer.initialize();
+          await audioPlayer.resume();
+
+          playAllNotes(
+            notes,
+            audioPlayer,
+            (index) => renderNotation(notationEl, vexNotes, index),
+            () => {
+              renderNotation(notationEl, vexNotes);
+              updateButton(playButton, "再生", false);
+            },
+          );
+        });
+      };
+
+      // DOMContentLoadedで初期化
+      if (typeof window !== "undefined") {
+        window.addEventListener("DOMContentLoaded", initialize);
+      }
+    </script>
+
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </body>
+</html>

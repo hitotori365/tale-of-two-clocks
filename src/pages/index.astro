@@ -15,7 +15,13 @@ import "../styles/global.css";
       <div class="p-8 max-w-4xl mx-auto">
         <h1 class="text-3xl mb-8 text-gray-800">音符と音の同期</h1>
 
-        <div id="notation"></div>
+        <div id="notation-wrapper" style="position: relative; display: inline-block;">
+          <div id="notation"></div>
+          <div id="playhead" style="display: none; position: absolute; top: 0; left: 0; width: 3px; height: 100%; pointer-events: none;">
+            <div style="position: absolute; left: 2px; top: 0; width: 4px; height: 100%; background: rgba(0,0,0,0.15); border-radius: 2px;"></div>
+            <div style="position: absolute; left: 0; top: 0; width: 3px; height: 100%; background: linear-gradient(to bottom, #FF4444, #FF0000, #CC0000); border-radius: 1px;"></div>
+          </div>
+        </div>
         <button
           id="play-button"
           disabled
@@ -103,52 +109,100 @@ import "../styles/global.css";
         voice.draw(vexFlow.context, vexFlow.stave);
       };
 
-      // 楽譜の再描画
+      // 音符のX座標を取得
+      const getNoteXPositions = (notes: StaveNote[]): number[] => {
+        return notes.map(note => {
+          const staveNote = note as any;
+          return staveNote.getAbsoluteX() + (staveNote.getWidth() / 2);
+        });
+      };
+
+      // 楽譜の描画（初期化時と再生完了時のみ呼ぶ）
       const renderNotation = (
         container: HTMLElement,
         vexNotes: StaveNote[],
         playingIndex?: number,
-      ): void => {
+      ): number[] => {
         container.innerHTML = "";
         const vexFlow = initializeVexFlow(container);
         const styledNotes = styleAllNotes(vexNotes, playingIndex);
         drawNotes(vexFlow, styledNotes);
+        return getNoteXPositions(styledNotes);
       };
 
       // 遅延実行のスケジューリング
       const scheduleAction = (action: () => void, delayMs: number): number =>
         window.setTimeout(action, delayMs);
 
-      // 音符再生のスケジューリング
-      const scheduleNotePlay = (
-        note: Note,
-        index: number,
-        delay: number,
-        audioPlayer: AudioPlayer,
-        onNoteStart: (index: number) => void,
-      ): number => {
-        scheduleAction(() => {
-          onNoteStart(index);
-          audioPlayer.playChord(note.keys, note.duration * BEAT_DURATION);
-        }, delay * 1000);
-
-        return delay + note.duration * BEAT_DURATION;
+      // プレイヘッドDOM要素の制御
+      const showPlayhead = (playheadEl: HTMLElement, x: number): void => {
+        playheadEl.style.display = 'block';
+        playheadEl.style.transform = `translateX(${x}px)`;
       };
 
-      // すべての音符の再生
+      const hidePlayhead = (playheadEl: HTMLElement): void => {
+        playheadEl.style.display = 'none';
+      };
+
+      // すべての音符の再生（requestAnimationFrameで一括アニメーション）
       const playAllNotes = (
         notes: Note[],
         audioPlayer: AudioPlayer,
-        onNoteStart: (index: number) => void,
+        noteXPositions: number[],
+        playheadEl: HTMLElement,
         onComplete: () => void,
       ): void => {
-        const totalDelay = notes.reduce(
-          (delay, note, index) =>
-            scheduleNotePlay(note, index, delay, audioPlayer, onNoteStart),
-          0,
-        );
+        // 各音符の開始時刻(秒)を事前計算
+        const noteStartTimes: number[] = [];
+        let time = 0;
+        for (const note of notes) {
+          noteStartTimes.push(time);
+          time += note.duration * BEAT_DURATION;
+        }
+        const totalDuration = time;
 
-        scheduleAction(onComplete, totalDelay * 1000);
+        // 音声の発音をスケジュール
+        for (let i = 0; i < notes.length; i++) {
+          scheduleAction(() => {
+            audioPlayer.playChord(notes[i].keys, notes[i].duration * BEAT_DURATION);
+          }, noteStartTimes[i] * 1000);
+        }
+
+        // アニメーションループ
+        const animStartTime = performance.now();
+
+        const update = () => {
+          const elapsed = (performance.now() - animStartTime) / 1000;
+          if (elapsed >= totalDuration) {
+            hidePlayhead(playheadEl);
+            onComplete();
+            return;
+          }
+
+          // 現在どの音符か
+          let currentIndex = 0;
+          for (let i = notes.length - 1; i >= 0; i--) {
+            if (elapsed >= noteStartTimes[i]) {
+              currentIndex = i;
+              break;
+            }
+          }
+
+          const noteStart = noteStartTimes[currentIndex];
+          const noteDur = notes[currentIndex].duration * BEAT_DURATION;
+          const progress = (elapsed - noteStart) / noteDur;
+
+          const currentX = noteXPositions[currentIndex];
+          const nextX = currentIndex < noteXPositions.length - 1
+            ? noteXPositions[currentIndex + 1]
+            : currentX + 50;
+          const x = currentX + (nextX - currentX) * Math.min(progress, 1);
+
+          showPlayhead(playheadEl, x);
+          requestAnimationFrame(update);
+        };
+
+        requestAnimationFrame(update);
       };
 
       // ボタンの状態を更新
@@ -164,17 +218,17 @@ import "../styles/global.css";
       // メイン初期化関数
       const initialize = async (): Promise<void> => {
         const notationEl = document.querySelector<HTMLDivElement>("#notation");
-        const playButton =
-          document.querySelector<HTMLButtonElement>("#play-button");
+        const playButton = document.querySelector<HTMLButtonElement>("#play-button");
+        const playheadEl = document.querySelector<HTMLDivElement>("#playhead");
 
-        if (!notationEl || !playButton) return;
+        if (!notationEl || !playButton || !playheadEl) return;
 
         const audioPlayer = new AudioPlayer();
         const notes = createNoteData();
         const vexNotes = createVexNotes();
 
-        // 初期描画
-        renderNotation(notationEl, vexNotes);
+        // 初期描画し、音符のX座標を取得
+        const noteXPositions = renderNotation(notationEl, vexNotes);
         updateButton(playButton, "再生", false);
 
         // 再生ボタンのイベントハンドラ
@@ -187,9 +241,10 @@ import "../styles/global.css";
           playAllNotes(
             notes,
             audioPlayer,
-            (index) => renderNotation(notationEl, vexNotes, index),
+            noteXPositions,
+            playheadEl,
             () => {
-              renderNotation(notationEl, vexNotes);
+              hidePlayhead(playheadEl);
               updateButton(playButton, "再生", false);
             },
           );

@@ -22,19 +22,42 @@ import "../styles/global.css";
             <div style="position: absolute; left: 0; top: 0; width: 3px; height: 100%; background: linear-gradient(to bottom, #FF4444, #FF0000, #CC0000); border-radius: 1px;"></div>
           </div>
         </div>
-        <button
-          id="play-button"
-          disabled
-          class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
-        >
-          読み込み中...
-        </button>
+        <div class="mt-4 flex items-center gap-2">
+          <button
+            id="play-button"
+            disabled
+            class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+          >
+            読み込み中...
+          </button>
+          <button
+            id="export-mp4-button"
+            style="display: none;"
+            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+          >
+            MP4で保存
+          </button>
+          <button
+            id="export-mov-button"
+            style="display: none;"
+            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+          >
+            MOVで保存
+          </button>
+        </div>
+        <div id="progress-container" style="display: none;" class="mt-3 w-80">
+          <div class="bg-gray-200 rounded-full h-3 overflow-hidden">
+            <div id="progress-bar" class="bg-green-500 h-3 rounded-full transition-all duration-100" style="width: 0%;"></div>
+          </div>
+          <p id="progress-text" class="text-sm text-gray-600 mt-1">エクスポート中... 0%</p>
+        </div>
       </div>
     </main>
 
     <script>
       import { Renderer, Stave, StaveNote, Voice, Formatter } from "vexflow";
       import { AudioPlayer } from "../utils/audioPlayer";
+      import { exportVideo, isWebCodecsSupported, type ExportFormat } from "../utils/videoExporter";
 
       // 型定義
       type Note = { keys: string[]; duration: number };
@@ -215,13 +238,28 @@ import "../styles/global.css";
         button.disabled = disabled;
       };
 
+      // エクスポートボタン群の有効/無効を一括制御
+      const setExportButtonsDisabled = (
+        buttons: HTMLButtonElement[],
+        disabled: boolean,
+      ): void => {
+        buttons.forEach(btn => btn.disabled = disabled);
+      };
+
       // メイン初期化関数
       const initialize = async (): Promise<void> => {
         const notationEl = document.querySelector<HTMLDivElement>("#notation");
         const playButton = document.querySelector<HTMLButtonElement>("#play-button");
         const playheadEl = document.querySelector<HTMLDivElement>("#playhead");
+        const exportMp4Button = document.querySelector<HTMLButtonElement>("#export-mp4-button");
+        const exportMovButton = document.querySelector<HTMLButtonElement>("#export-mov-button");
+        const progressContainer = document.querySelector<HTMLDivElement>("#progress-container");
+        const progressBar = document.querySelector<HTMLDivElement>("#progress-bar");
+        const progressText = document.querySelector<HTMLParagraphElement>("#progress-text");
 
-        if (!notationEl || !playButton || !playheadEl) return;
+        if (!notationEl || !playButton || !playheadEl ||
+            !exportMp4Button || !exportMovButton ||
+            !progressContainer || !progressBar || !progressText) return;
 
         const audioPlayer = new AudioPlayer();
         const notes = createNoteData();
@@ -231,9 +269,90 @@ import "../styles/global.css";
         const noteXPositions = renderNotation(notationEl, vexNotes);
         updateButton(playButton, "再生", false);
 
+        // WebCodecs対応ブラウザでのみエクスポートボタンを表示
+        const exportButtons = [exportMp4Button, exportMovButton];
+        if (isWebCodecsSupported()) {
+          exportMp4Button.style.display = '';
+          exportMovButton.style.display = '';
+        }
+
+        // VexFlowのCanvasバックエンドで楽譜をCanvasに描画する
+        const renderNotationToCanvas = (): { canvas: HTMLCanvasElement; xPositions: number[] } => {
+          const canvas = document.createElement('canvas');
+          canvas.width = CANVAS_WIDTH;
+          canvas.height = CANVAS_HEIGHT;
+
+          // 白背景を先に描画
+          const ctx2d = canvas.getContext('2d')!;
+          ctx2d.fillStyle = '#ffffff';
+          ctx2d.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+          // VexFlowのCanvasバックエンドで描画
+          const vfRenderer = new Renderer(canvas, Renderer.Backends.CANVAS);
+          vfRenderer.resize(CANVAS_WIDTH, CANVAS_HEIGHT);
+          const vfContext = vfRenderer.getContext();
+
+          const stave = new Stave(STAVE_CONFIG.x, STAVE_CONFIG.y, STAVE_CONFIG.width);
+          stave.addClef("treble").addTimeSignature("4/4");
+          stave.setContext(vfContext).draw();
+
+          // エクスポート用に新しいStaveNoteを作成（StaveNoteは一度Voiceに入れると再利用不可）
+          const exportNotes = createVexNotes();
+          const styledNotes = styleAllNotes(exportNotes);
+          const voice = new Voice({ numBeats: 4, beatValue: 4 });
+          voice.addTickables(styledNotes);
+          new Formatter().joinVoices([voice]).format([voice], 350);
+          voice.draw(vfContext, stave);
+
+          // Canvas描画から直接X座標を取得
+          // VexFlowのCanvas rendererはdevicePixelRatioでcanvasサイズを拡大するが、
+          // getAbsoluteX()は論理座標を返すため、実際のピクセル座標に変換が必要
+          const dpiScale = canvas.width / CANVAS_WIDTH;
+          const xPositions = getNoteXPositions(styledNotes).map(x => x * dpiScale);
+
+          return { canvas, xPositions };
+        };
+
+        // エクスポート処理
+        const handleExport = async (format: ExportFormat) => {
+          playButton.disabled = true;
+          setExportButtonsDisabled(exportButtons, true);
+          progressContainer.style.display = '';
+          progressBar.style.width = '0%';
+          progressText.textContent = 'エクスポート中... 0%';
+
+          try {
+            const { canvas: baseCanvas, xPositions: canvasNoteXPositions } = renderNotationToCanvas();
+            await exportVideo({
+              format,
+              baseCanvas,
+              notes,
+              noteXPositions: canvasNoteXPositions,
+              beatDuration: BEAT_DURATION,
+              onProgress: (progress) => {
+                const pct = Math.round(progress * 100);
+                progressBar.style.width = `${pct}%`;
+                progressText.textContent = `エクスポート中... ${pct}%`;
+              },
+            });
+
+            progressText.textContent = '完了しました';
+          } catch (e) {
+            console.error('Export failed:', e);
+            progressText.textContent = `エラー: ${e instanceof Error ? e.message : String(e)}`;
+          } finally {
+            playButton.disabled = false;
+            setExportButtonsDisabled(exportButtons, false);
+            setTimeout(() => {
+              progressContainer.style.display = 'none';
+            }, 3000);
+          }
+        };
+
         // 再生ボタンのイベントハンドラ
         playButton.addEventListener("click", async () => {
           updateButton(playButton, "再生中...", true);
+          setExportButtonsDisabled(exportButtons, true);
 
           await audioPlayer.initialize();
           await audioPlayer.resume();
@@ -246,9 +365,14 @@ import "../styles/global.css";
             () => {
               hidePlayhead(playheadEl);
               updateButton(playButton, "再生", false);
+              setExportButtonsDisabled(exportButtons, false);
             },
           );
         });
+
+        // エクスポートボタンのイベントハンドラ
+        exportMp4Button.addEventListener("click", () => handleExport('mp4'));
+        exportMovButton.addEventListener("click", () => handleExport('mov'));
       };
 
       // DOMContentLoadedで初期化

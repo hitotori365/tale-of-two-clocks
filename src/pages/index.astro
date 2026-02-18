@@ -96,6 +96,7 @@ import "../styles/global.css";
           ? { fillStyle: "red", strokeStyle: "red" }
           : { fillStyle: "black", strokeStyle: "black" };
         note.setStyle(style);
+        note.setLedgerLineStyle(style);
         return note;
       };
 
@@ -170,6 +171,7 @@ import "../styles/global.css";
       // すべての音符の再生（requestAnimationFrameで一括アニメーション）
       const playAllNotes = (
         notes: Note[],
+        notationEl: HTMLElement,
         audioPlayer: AudioPlayer,
         noteXPositions: number[],
         playheadEl: HTMLElement,
@@ -193,10 +195,13 @@ import "../styles/global.css";
 
         // アニメーションループ
         const animStartTime = performance.now();
+        let prevNoteIndex = -1;
 
         const update = () => {
           const elapsed = (performance.now() - animStartTime) / 1000;
           if (elapsed >= totalDuration) {
+            // 全音符を黒に戻す（再描画）
+            renderNotation(notationEl, createVexNotes());
             hidePlayhead(playheadEl);
             onComplete();
             return;
@@ -209,6 +214,12 @@ import "../styles/global.css";
               currentIndex = i;
               break;
             }
+          }
+
+          // 音符の色を更新（インデックスが変わったときだけ再描画）
+          if (currentIndex !== prevNoteIndex) {
+            renderNotation(notationEl, createVexNotes(), currentIndex);
+            prevNoteIndex = currentIndex;
           }
 
           const noteStart = noteStartTimes[currentIndex];
@@ -263,10 +274,9 @@ import "../styles/global.css";
 
         const audioPlayer = new AudioPlayer();
         const notes = createNoteData();
-        const vexNotes = createVexNotes();
 
         // 初期描画し、音符のX座標を取得
-        const noteXPositions = renderNotation(notationEl, vexNotes);
+        const noteXPositions = renderNotation(notationEl, createVexNotes());
         updateButton(playButton, "再生", false);
 
         // WebCodecs対応ブラウザでのみエクスポートボタンを表示
@@ -359,6 +369,7 @@ import "../styles/global.css";
 
           playAllNotes(
             notes,
+            notationEl,
             audioPlayer,
             noteXPositions,
             playheadEl,
@@ -387,6 +398,15 @@ import "../styles/global.css";
         margin: 0;
         width: 100%;
         height: 100%;
+      }
+
+      /* TailwindのCSSリセットがVexFlowのSVGに影響するのを防ぐ */
+      #notation svg {
+        display: inline !important;
+      }
+      #notation svg * {
+        box-sizing: content-box;
+        border-style: none;
       }
     </style>
   </body>

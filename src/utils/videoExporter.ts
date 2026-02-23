@@ -9,8 +9,7 @@ import {
 } from 'mediabunny';
 import { OfflineRenderer } from './offlineRenderer';
 import { renderAudioOffline } from './offlineAudioRenderer';
-
-type Note = { keys: string[]; duration: number };
+import type { Note } from './scoreConfig';
 
 export type ExportFormat = 'mp4' | 'mov';
 

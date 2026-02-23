@@ -1,4 +1,4 @@
-type Note = { keys: string[]; duration: number };
+import type { Note } from './scoreConfig';
 
 /**
  * 事前にCanvasに描画された楽譜をベースに、

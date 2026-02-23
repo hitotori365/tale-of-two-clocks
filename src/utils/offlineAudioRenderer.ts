@@ -1,6 +1,5 @@
 import { getFrequency } from './noteFrequencies';
-
-type Note = { keys: string[]; duration: number };
+import type { Note } from './scoreConfig';
 
 /**
  * OfflineAudioContextを使って音声をAudioBufferにレンダリングする。

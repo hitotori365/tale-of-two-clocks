@@ -287,7 +287,7 @@ import "../styles/global.css";
         }
 
         // VexFlowのCanvasバックエンドで楽譜をCanvasに描画する
-        const renderNotationToCanvas = (): { canvas: HTMLCanvasElement; xPositions: number[] } => {
+        const renderNotationToCanvas = (playingIndex?: number): { canvas: HTMLCanvasElement; xPositions: number[] } => {
           const canvas = document.createElement('canvas');
           canvas.width = CANVAS_WIDTH;
           canvas.height = CANVAS_HEIGHT;
@@ -308,7 +308,7 @@ import "../styles/global.css";
 
           // エクスポート用に新しいStaveNoteを作成（StaveNoteは一度Voiceに入れると再利用不可）
           const exportNotes = createVexNotes();
-          const styledNotes = styleAllNotes(exportNotes);
+          const styledNotes = styleAllNotes(exportNotes, playingIndex);
           const voice = new Voice({ numBeats: 4, beatValue: 4 });
           voice.addTickables(styledNotes);
           new Formatter().joinVoices([voice]).format([voice], 350);
@@ -332,10 +332,17 @@ import "../styles/global.css";
           progressText.textContent = 'エクスポート中... 0%';
 
           try {
-            const { canvas: baseCanvas, xPositions: canvasNoteXPositions } = renderNotationToCanvas();
+            // 音符ごとにハイライト済みのCanvas画像を事前生成
+            const baseCanvases: HTMLCanvasElement[] = [];
+            let canvasNoteXPositions: number[] = [];
+            for (let i = 0; i < notes.length; i++) {
+              const { canvas, xPositions } = renderNotationToCanvas(i);
+              baseCanvases.push(canvas);
+              if (i === 0) canvasNoteXPositions = xPositions;
+            }
             await exportVideo({
               format,
-              baseCanvas,
+              baseCanvases,
               notes,
               noteXPositions: canvasNoteXPositions,
               beatDuration: BEAT_DURATION,

@@ -7,7 +7,7 @@ type Note = { keys: string[]; duration: number };
 export class OfflineRenderer {
   private _canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private baseImage: ImageBitmap | null = null;
+  private baseImages: ImageBitmap[] = [];
 
   constructor(width: number, height: number) {
     this._canvas = document.createElement('canvas');
@@ -17,11 +17,13 @@ export class OfflineRenderer {
   }
 
   /**
-   * 描画済みCanvasをベース画像としてキャッシュする。
-   * ImageBitmapに変換して保持（高速な描画が可能）。
+   * 音符ごとのハイライト済みCanvasをベース画像としてキャッシュする。
+   * baseCanvases[i] は音符iがハイライトされた楽譜画像。
    */
-  async initialize(baseCanvas: HTMLCanvasElement): Promise<void> {
-    this.baseImage = await createImageBitmap(baseCanvas);
+  async initialize(baseCanvases: HTMLCanvasElement[]): Promise<void> {
+    this.baseImages = await Promise.all(
+      baseCanvases.map(c => createImageBitmap(c)),
+    );
   }
 
   /**
@@ -39,11 +41,6 @@ export class OfflineRenderer {
     // 背景クリア（白）
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // ベース画像（楽譜）を描画
-    if (this.baseImage) {
-      ctx.drawImage(this.baseImage, 0, 0);
-    }
 
     // 各音符の開始時刻を計算
     const noteStartTimes: number[] = [];
@@ -63,6 +60,11 @@ export class OfflineRenderer {
         currentIndex = i;
         break;
       }
+    }
+
+    // 該当する音符がハイライトされたベース画像を描画
+    if (this.baseImages[currentIndex]) {
+      ctx.drawImage(this.baseImages[currentIndex], 0, 0);
     }
 
     // 線形補間でプレイヘッドX座標を計算

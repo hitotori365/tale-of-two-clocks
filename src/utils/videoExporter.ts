@@ -16,7 +16,7 @@ export type ExportFormat = 'mp4' | 'mov';
 
 export type ExportOptions = {
   format: ExportFormat;
-  baseCanvas: HTMLCanvasElement;
+  baseCanvases: HTMLCanvasElement[];
   notes: Note[];
   noteXPositions: number[];
   beatDuration: number;
@@ -27,7 +27,7 @@ export type ExportOptions = {
 export async function exportVideo(options: ExportOptions): Promise<void> {
   const {
     format,
-    baseCanvas,
+    baseCanvases,
     notes,
     noteXPositions,
     beatDuration,
@@ -45,10 +45,11 @@ export async function exportVideo(options: ExportOptions): Promise<void> {
   const audioBuffer = await renderAudioOffline(notes, beatDuration);
 
   // 2. オフライン映像レンダラーを初期化（H.264は偶数サイズを要求）
-  const width = baseCanvas.width % 2 === 0 ? baseCanvas.width : baseCanvas.width + 1;
-  const height = baseCanvas.height % 2 === 0 ? baseCanvas.height : baseCanvas.height + 1;
+  const firstCanvas = baseCanvases[0];
+  const width = firstCanvas.width % 2 === 0 ? firstCanvas.width : firstCanvas.width + 1;
+  const height = firstCanvas.height % 2 === 0 ? firstCanvas.height : firstCanvas.height + 1;
   const renderer = new OfflineRenderer(width, height);
-  await renderer.initialize(baseCanvas);
+  await renderer.initialize(baseCanvases);
 
   // 3. Mediabunny Outputを作成
   const outputFormat = format === 'mov'

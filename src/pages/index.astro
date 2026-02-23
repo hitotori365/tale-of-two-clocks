@@ -55,11 +55,12 @@ import "../styles/global.css";
     </main>
 
     <script>
-      import { AudioPlayer } from "../utils/audioPlayer";
-      import { createNoteData, createVexNotes, BEAT_DURATION } from "../utils/scoreConfig";
-      import { renderNotation, renderNotationToCanvas } from "../utils/notationRenderer";
-      import { playAllNotes, hidePlayhead } from "../utils/playback";
-      import { exportVideo, isWebCodecsSupported, type ExportFormat } from "../utils/videoExporter";
+      import { AudioPlayer } from "../audio/audioPlayer";
+      import { ScoreDocument } from "../models/ScoreDocument";
+      import { Timeline } from "../models/Timeline";
+      import { ScoreRenderer } from "../rendering/ScoreRenderer";
+      import { playAllNotes, hidePlayhead } from "../playback";
+      import { exportVideo, isWebCodecsSupported, type ExportFormat } from "../rendering/videoExporter";
 
       // ボタンの状態を更新
       const updateButton = (
@@ -94,11 +95,13 @@ import "../styles/global.css";
             !exportMp4Button || !exportMovButton ||
             !progressContainer || !progressBar || !progressText) return;
 
+        const scoreDocument = ScoreDocument.createDefault();
+        const timeline = new Timeline(scoreDocument);
+        const renderer = new ScoreRenderer();
         const audioPlayer = new AudioPlayer();
-        const notes = createNoteData();
 
         // 初期描画し、音符のX座標を取得
-        const noteXPositions = renderNotation(notationEl, createVexNotes());
+        const noteXPositions = renderer.renderToSVG(notationEl, scoreDocument);
         updateButton(playButton, "再生", false);
 
         // WebCodecs対応ブラウザでのみエクスポートボタンを表示
@@ -120,17 +123,17 @@ import "../styles/global.css";
             // 音符ごとにハイライト済みのCanvas画像を事前生成
             const baseCanvases: HTMLCanvasElement[] = [];
             let canvasNoteXPositions: number[] = [];
-            for (let i = 0; i < notes.length; i++) {
-              const { canvas, xPositions } = renderNotationToCanvas(i);
+            for (let i = 0; i < scoreDocument.notes.length; i++) {
+              const { canvas, xPositions } = renderer.renderToCanvas(scoreDocument, i);
               baseCanvases.push(canvas);
               if (i === 0) canvasNoteXPositions = xPositions;
             }
             await exportVideo({
               format,
+              document: scoreDocument,
+              timeline,
               baseCanvases,
-              notes,
               noteXPositions: canvasNoteXPositions,
-              beatDuration: BEAT_DURATION,
               onProgress: (progress) => {
                 const pct = Math.round(progress * 100);
                 progressBar.style.width = `${pct}%`;
@@ -160,8 +163,10 @@ import "../styles/global.css";
           await audioPlayer.resume();
 
           playAllNotes(
-            notes,
+            scoreDocument,
+            timeline,
             notationEl,
+            renderer,
             audioPlayer,
             noteXPositions,
             playheadEl,

@@ -1,1 +1,11 @@
 @import "tailwindcss";
+
+/* TailwindのpreflightがVexFlowのSVGに影響するのを防ぐ */
+#notation svg {
+  display: inline !important;
+  vertical-align: baseline;
+}
+#notation svg * {
+  box-sizing: content-box;
+  border-style: none;
+}

@@ -9,11 +9,6 @@ import "../styles/global.css";
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="generator" content={Astro.generator} />
     <title>VexFlow Tutorial - 音符と音の同期</title>
-    <style is:inline>
-      /* TailwindのCSSリセットがVexFlowのSVGに影響するのを防ぐ（インラインで即時適用） */
-      #notation svg { display: inline !important; }
-      #notation svg * { box-sizing: content-box; border-style: none; }
-    </style>
   </head>
   <body>
     <main>
@@ -391,9 +386,14 @@ import "../styles/global.css";
         exportMovButton.addEventListener("click", () => handleExport('mov'));
       };
 
-      // DOMContentLoadedで初期化
+      // CSS（Tailwind含む）の読み込み完了後に初期化
       if (typeof window !== "undefined") {
-        window.addEventListener("DOMContentLoaded", initialize);
+        const start = () => requestAnimationFrame(initialize);
+        if (document.readyState === "complete") {
+          start();
+        } else {
+          window.addEventListener("load", start);
+        }
       }
     </script>
 

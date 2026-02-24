@@ -39,6 +39,12 @@ export class ScoreDocument {
     this.listeners.get(event)?.forEach(cb => cb());
   }
 
+  setNoteKeys(index: number, keys: string[]): void {
+    if (index < 0 || index >= this.notes.length) return;
+    this.notes[index] = { ...this.notes[index], keys };
+    this.emit('change');
+  }
+
   static createDefault(): ScoreDocument {
     return new ScoreDocument(
       [

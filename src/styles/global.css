@@ -1,11 +1,16 @@
 @import "tailwindcss";
 
 /* TailwindのpreflightがVexFlowのSVGに影響するのを防ぐ */
-#notation svg {
+.notation-container svg {
   display: inline !important;
   vertical-align: baseline;
 }
-#notation svg * {
+.notation-container svg * {
   box-sizing: content-box;
   border-style: none;
+}
+
+/* 楽譜上のカーソル */
+.notation-container svg {
+  cursor: pointer;
 }

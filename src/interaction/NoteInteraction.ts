@@ -1,18 +1,12 @@
 import type { ScoreDocument } from '../models/ScoreDocument';
-import type { ScoreRenderer } from '../rendering/ScoreRenderer';
 import { yToNearestPitch, pitchToY, snapY } from './pitchMap';
-
-export type DragMode = 'ghost' | 'rerender' | 'hybrid';
 
 export type NoteInteractionConfig = {
   wrapper: HTMLElement;
   container: HTMLElement;
   scoreDocument: ScoreDocument;
-  renderer: ScoreRenderer;
   getNoteXPositions: () => number[];
-  setNoteXPositions: (pos: number[]) => void;
   isPlaybackActive: () => boolean;
-  mode: DragMode;
 };
 
 type DragState = {
@@ -27,7 +21,6 @@ const HIT_TOLERANCE_Y = 20;
 export class NoteInteraction {
   private config: NoteInteractionConfig;
   private dragState: DragState | null = null;
-  private ghostEl: HTMLElement | null = null;
 
   // hybrid mode state
   private svgOverlay: SVGSVGElement | null = null;
@@ -97,11 +90,7 @@ export class NoteInteraction {
       startY: svgY,
     };
 
-    if (this.config.mode === 'ghost') {
-      this.createGhost(this.config.getNoteXPositions()[noteIndex], pitchToY(originalKey));
-    } else if (this.config.mode === 'hybrid') {
-      this.createHybridClone(noteIndex);
-    }
+    this.createHybridClone(noteIndex);
 
     this.config.container.style.cursor = 'grabbing';
     document.addEventListener('mousemove', this.boundMouseMove);
@@ -114,20 +103,7 @@ export class NoteInteraction {
     const svgY = this.getSvgY(e.clientY);
     const snappedY = snapY(svgY);
 
-    if (this.config.mode === 'ghost') {
-      this.updateGhost(snappedY);
-    } else if (this.config.mode === 'hybrid') {
-      this.updateHybridClone(snappedY);
-    } else {
-      // rerender mode: 仮更新して再レンダリング
-      const newKey = yToNearestPitch(svgY);
-      this.config.scoreDocument.notes[this.dragState.noteIndex].keys = [newKey];
-      const xPositions = this.config.renderer.renderToSVG(
-        this.config.container,
-        this.config.scoreDocument,
-      );
-      this.config.setNoteXPositions(xPositions);
-    }
+    this.updateHybridClone(snappedY);
   }
 
   private onMouseUp(e: MouseEvent): void {
@@ -137,69 +113,15 @@ export class NoteInteraction {
     const newKey = yToNearestPitch(svgY);
     const { noteIndex, originalKey } = this.dragState;
 
-    if (this.config.mode === 'ghost') {
-      this.removeGhost();
-      if (newKey !== originalKey) {
-        this.config.scoreDocument.setNoteKeys(noteIndex, [newKey]);
-      }
-    } else if (this.config.mode === 'hybrid') {
-      this.removeHybridClone();
-      if (newKey !== originalKey) {
-        this.config.scoreDocument.setNoteKeys(noteIndex, [newKey]);
-      }
-    } else {
-      // rerender mode: 最終確定
-      if (newKey === originalKey) {
-        // 元に戻す
-        this.config.scoreDocument.notes[noteIndex].keys = [originalKey];
-        const xPositions = this.config.renderer.renderToSVG(
-          this.config.container,
-          this.config.scoreDocument,
-        );
-        this.config.setNoteXPositions(xPositions);
-      } else {
-        // setNoteKeysで正式にchangeイベント発火
-        this.config.scoreDocument.setNoteKeys(noteIndex, [newKey]);
-      }
+    this.removeHybridClone();
+    if (newKey !== originalKey) {
+      this.config.scoreDocument.setNoteKeys(noteIndex, [newKey]);
     }
 
     this.dragState = null;
     this.config.container.style.cursor = '';
     document.removeEventListener('mousemove', this.boundMouseMove);
     document.removeEventListener('mouseup', this.boundMouseUp);
-  }
-
-  // --- Ghost indicator (ellipse div) ---
-
-  private createGhost(x: number, y: number): void {
-    const ghost = document.createElement('div');
-    ghost.style.cssText = `
-      position: absolute;
-      width: 12px;
-      height: 8px;
-      background: rgba(255, 0, 0, 0.4);
-      border: 1px solid rgba(255, 0, 0, 0.6);
-      border-radius: 50%;
-      pointer-events: none;
-      transform: translate(-50%, -50%);
-      z-index: 10;
-    `;
-    ghost.style.left = `${x}px`;
-    ghost.style.top = `${y}px`;
-    this.config.wrapper.appendChild(ghost);
-    this.ghostEl = ghost;
-  }
-
-  private updateGhost(snappedY: number): void {
-    if (!this.ghostEl || !this.dragState) return;
-    this.ghostEl.style.top = `${snappedY}px`;
-  }
-
-  private removeGhost(): void {
-    if (this.ghostEl) {
-      this.ghostEl.remove();
-      this.ghostEl = null;
-    }
   }
 
   // --- Hybrid mode (SVG notehead clone) ---

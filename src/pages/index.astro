@@ -8,89 +8,45 @@ import "../styles/global.css";
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="generator" content={Astro.generator} />
-    <title>VexFlow Tutorial - 音符ドラッグ&ドロップ比較</title>
+    <title>VexFlow Tutorial - 音符ドラッグ&ドロップ</title>
   </head>
   <body>
     <main>
-      <div class="p-8 max-w-7xl mx-auto">
-        <h1 class="text-3xl mb-8 text-gray-800">音符ドラッグ&ドロップ — 2方式比較</h1>
+      <div class="p-8 max-w-4xl mx-auto">
+        <h1 class="text-3xl mb-8 text-gray-800">音符ドラッグ&ドロップ</h1>
 
-        <div class="flex gap-8">
-          <!-- 方式A: ハイブリッド（SVGクローン） -->
-          <div class="flex-1">
-            <h2 class="text-xl mb-4 text-gray-700">方式A: ハイブリッド（SVGクローン）</h2>
-            <div class="notation-wrapper" data-mode="hybrid" style="position: relative; display: inline-block;">
-              <div class="notation-container"></div>
-              <div class="playhead" style="display: none; position: absolute; top: 0; left: 0; width: 3px; height: 100%; pointer-events: none;">
-                <div style="position: absolute; left: 2px; top: 0; width: 4px; height: 100%; background: rgba(0,0,0,0.15); border-radius: 2px;"></div>
-                <div style="position: absolute; left: 0; top: 0; width: 3px; height: 100%; background: linear-gradient(to bottom, #FF4444, #FF0000, #CC0000); border-radius: 1px;"></div>
-              </div>
-            </div>
-            <div class="mt-4 flex items-center gap-2">
-              <button
-                class="play-button px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                disabled
-              >
-                読み込み中...
-              </button>
-              <button
-                class="export-mp4-button px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                style="display: none;"
-              >
-                MP4で保存
-              </button>
-              <button
-                class="export-mov-button px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                style="display: none;"
-              >
-                MOVで保存
-              </button>
-            </div>
-            <div class="progress-container mt-3 w-80" style="display: none;">
-              <div class="bg-gray-200 rounded-full h-3 overflow-hidden">
-                <div class="progress-bar bg-green-500 h-3 rounded-full transition-all duration-100" style="width: 0%;"></div>
-              </div>
-              <p class="progress-text text-sm text-gray-600 mt-1">エクスポート中... 0%</p>
-            </div>
+        <div class="notation-wrapper" style="position: relative; display: inline-block;">
+          <div class="notation-container"></div>
+          <div class="playhead" style="display: none; position: absolute; top: 0; left: 0; width: 3px; height: 100%; pointer-events: none;">
+            <div style="position: absolute; left: 2px; top: 0; width: 4px; height: 100%; background: rgba(0,0,0,0.15); border-radius: 2px;"></div>
+            <div style="position: absolute; left: 0; top: 0; width: 3px; height: 100%; background: linear-gradient(to bottom, #FF4444, #FF0000, #CC0000); border-radius: 1px;"></div>
           </div>
-
-          <!-- 方式B: 毎回再レンダリング -->
-          <div class="flex-1">
-            <h2 class="text-xl mb-4 text-gray-700">方式B: 毎回再レンダリング</h2>
-            <div class="notation-wrapper" data-mode="rerender" style="position: relative; display: inline-block;">
-              <div class="notation-container"></div>
-              <div class="playhead" style="display: none; position: absolute; top: 0; left: 0; width: 3px; height: 100%; pointer-events: none;">
-                <div style="position: absolute; left: 2px; top: 0; width: 4px; height: 100%; background: rgba(0,0,0,0.15); border-radius: 2px;"></div>
-                <div style="position: absolute; left: 0; top: 0; width: 3px; height: 100%; background: linear-gradient(to bottom, #FF4444, #FF0000, #CC0000); border-radius: 1px;"></div>
-              </div>
-            </div>
-            <div class="mt-4 flex items-center gap-2">
-              <button
-                class="play-button px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                disabled
-              >
-                読み込み中...
-              </button>
-              <button
-                class="export-mp4-button px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                style="display: none;"
-              >
-                MP4で保存
-              </button>
-              <button
-                class="export-mov-button px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                style="display: none;"
-              >
-                MOVで保存
-              </button>
-            </div>
-            <div class="progress-container mt-3 w-80" style="display: none;">
-              <div class="bg-gray-200 rounded-full h-3 overflow-hidden">
-                <div class="progress-bar bg-green-500 h-3 rounded-full transition-all duration-100" style="width: 0%;"></div>
-              </div>
-              <p class="progress-text text-sm text-gray-600 mt-1">エクスポート中... 0%</p>
-            </div>
+        </div>
+        <div class="mt-4 flex items-center gap-2">
+          <button
+            class="play-button px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            disabled
+          >
+            読み込み中...
+          </button>
+          <button
+            class="export-mp4-button px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            style="display: none;"
+          >
+            MP4で保存
+          </button>
+          <button
+            class="export-mov-button px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            style="display: none;"
+          >
+            MOVで保存
+          </button>
+        </div>
+        <div class="progress-container mt-3 w-80" style="display: none;">
+          <div class="bg-gray-200 rounded-full h-3 overflow-hidden">
+            <div class="progress-bar bg-green-500 h-3 rounded-full transition-all duration-100" style="width: 0%;"></div>
           </div>
+          <p class="progress-text text-sm text-gray-600 mt-1">エクスポート中... 0%</p>
         </div>
       </div>
     </main>
@@ -102,7 +58,7 @@ import "../styles/global.css";
       import { ScoreRenderer } from "../rendering/ScoreRenderer";
       import { playAllNotes, hidePlayhead } from "../playback";
       import { exportVideo, isWebCodecsSupported, type ExportFormat } from "../rendering/videoExporter";
-      import { NoteInteraction, type DragMode } from "../interaction/NoteInteraction";
+      import { NoteInteraction } from "../interaction/NoteInteraction";
 
       const updateButton = (
         button: HTMLButtonElement,
@@ -120,14 +76,14 @@ import "../styles/global.css";
         buttons.forEach(btn => btn.disabled = disabled);
       };
 
-      function initScorePanel(wrapper: HTMLElement, mode: DragMode): void {
+      function initScorePanel(wrapper: HTMLElement): void {
         const container = wrapper.querySelector<HTMLDivElement>('.notation-container')!;
         const playheadEl = wrapper.querySelector<HTMLDivElement>('.playhead')!;
-        const panel = wrapper.closest('.flex-1')!;
-        const playButton = panel.querySelector<HTMLButtonElement>('.play-button')!;
-        const exportMp4Button = panel.querySelector<HTMLButtonElement>('.export-mp4-button')!;
-        const exportMovButton = panel.querySelector<HTMLButtonElement>('.export-mov-button')!;
-        const progressContainer = panel.querySelector<HTMLDivElement>('.progress-container')!;
+        const parent = wrapper.parentElement!;
+        const playButton = parent.querySelector<HTMLButtonElement>('.play-button')!;
+        const exportMp4Button = parent.querySelector<HTMLButtonElement>('.export-mp4-button')!;
+        const exportMovButton = parent.querySelector<HTMLButtonElement>('.export-mov-button')!;
+        const progressContainer = parent.querySelector<HTMLDivElement>('.progress-container')!;
         const progressBar = progressContainer.querySelector<HTMLDivElement>('.progress-bar')!;
         const progressText = progressContainer.querySelector<HTMLParagraphElement>('.progress-text')!;
 
@@ -150,11 +106,8 @@ import "../styles/global.css";
           wrapper,
           container,
           scoreDocument,
-          renderer,
           getNoteXPositions: () => noteXPositions,
-          setNoteXPositions: (pos) => { noteXPositions = pos; },
           isPlaybackActive: () => isPlaying,
-          mode,
         });
 
         updateButton(playButton, "再生", false);
@@ -238,11 +191,8 @@ import "../styles/global.css";
       }
 
       const initialize = (): void => {
-        const wrappers = document.querySelectorAll<HTMLElement>('.notation-wrapper');
-        wrappers.forEach(wrapper => {
-          const mode = wrapper.dataset.mode as DragMode;
-          initScorePanel(wrapper, mode);
-        });
+        const wrapper = document.querySelector<HTMLElement>('.notation-wrapper')!;
+        initScorePanel(wrapper);
       };
 
       if (typeof window !== "undefined") {

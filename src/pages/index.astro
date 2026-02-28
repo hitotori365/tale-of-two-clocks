@@ -34,6 +34,16 @@ import "../styles/global.css";
             読み込み中...
           </button>
           <button
+            class="add-measure-button px-3 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+          >
+            + 小節
+          </button>
+          <button
+            class="remove-measure-button px-3 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+          >
+            - 小節
+          </button>
+          <button
             class="export-mp4-button px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
             style="display: none;"
           >
@@ -87,6 +97,8 @@ import "../styles/global.css";
         const playheadEl = wrapper.querySelector<HTMLDivElement>('.playhead')!;
         const parent = wrapper.parentElement!;
         const playButton = parent.querySelector<HTMLButtonElement>('.play-button')!;
+        const addMeasureButton = parent.querySelector<HTMLButtonElement>('.add-measure-button')!;
+        const removeMeasureButton = parent.querySelector<HTMLButtonElement>('.remove-measure-button')!;
         const exportMp4Button = parent.querySelector<HTMLButtonElement>('.export-mp4-button')!;
         const exportMovButton = parent.querySelector<HTMLButtonElement>('.export-mov-button')!;
         const progressContainer = parent.querySelector<HTMLDivElement>('.progress-container')!;
@@ -100,6 +112,7 @@ import "../styles/global.css";
 
         const renderer = new ScoreRenderer();
         const audioPlayer = new AudioPlayer();
+        const chordClickZone = wrapper.querySelector<HTMLDivElement>('.chord-click-zone')!;
 
         let noteXPositions = renderer.renderToSVG(container, scoreDocument);
         let isPlaying = false;
@@ -107,6 +120,14 @@ import "../styles/global.css";
         const rerender = () => {
           if (!isPlaying) {
             noteXPositions = renderer.renderToSVG(container, scoreDocument);
+            // chord-click-zoneの幅をSVGに合わせて更新
+            const svg = container.querySelector('svg');
+            if (svg) {
+              const svgWidth = svg.getAttribute('width');
+              if (svgWidth) {
+                chordClickZone.style.width = `${parseFloat(svgWidth) - 20}px`;
+              }
+            }
           }
         };
 
@@ -126,7 +147,6 @@ import "../styles/global.css";
         });
 
         // ChordInteraction セットアップ
-        const chordClickZone = wrapper.querySelector<HTMLDivElement>('.chord-click-zone')!;
         const chordPopover = wrapper.querySelector<HTMLDivElement>('.chord-popover')!;
         const chordInput = wrapper.querySelector<HTMLInputElement>('.chord-input')!;
         new ChordInteraction({
@@ -140,6 +160,13 @@ import "../styles/global.css";
           isPlaybackActive: () => isPlaying,
         });
 
+        addMeasureButton.addEventListener('click', () => {
+          scoreDocument.addMeasure();
+        });
+        removeMeasureButton.addEventListener('click', () => {
+          scoreDocument.removeMeasure();
+        });
+
         updateButton(playButton, "再生", false);
 
         const exportButtons = [exportMp4Button, exportMovButton];
@@ -148,33 +175,39 @@ import "../styles/global.css";
           exportMovButton.style.display = '';
         }
 
+        const prepareCanvases = (doc: ScoreDocument) => {
+          const canvases: HTMLCanvasElement[] = [];
+          let xPos: number[] = [];
+          for (let i = 0; i < doc.notes.length; i++) {
+            const { canvas, xPositions } = renderer.renderToCanvas(doc, i);
+            canvases.push(canvas);
+            if (i === 0) xPos = xPositions;
+          }
+          return { canvases, xPos };
+        };
+
+        const updateProgress = (progress: number) => {
+          const pct = Math.round(progress * 100);
+          progressBar.style.width = `${pct}%`;
+          progressText.textContent = `エクスポート中... ${pct}%`;
+        };
+
         const handleExport = async (format: ExportFormat) => {
           playButton.disabled = true;
           setExportButtonsDisabled(exportButtons, true);
           progressContainer.style.display = '';
-          progressBar.style.width = '0%';
-          progressText.textContent = 'エクスポート中... 0%';
+          updateProgress(0);
 
           try {
             const timeline = new Timeline(scoreDocument);
-            const baseCanvases: HTMLCanvasElement[] = [];
-            let canvasNoteXPositions: number[] = [];
-            for (let i = 0; i < scoreDocument.notes.length; i++) {
-              const { canvas, xPositions } = renderer.renderToCanvas(scoreDocument, i);
-              baseCanvases.push(canvas);
-              if (i === 0) canvasNoteXPositions = xPositions;
-            }
+            const { canvases, xPos } = prepareCanvases(scoreDocument);
             await exportVideo({
               format,
               document: scoreDocument,
               timeline,
-              baseCanvases,
-              noteXPositions: canvasNoteXPositions,
-              onProgress: (progress) => {
-                const pct = Math.round(progress * 100);
-                progressBar.style.width = `${pct}%`;
-                progressText.textContent = `エクスポート中... ${pct}%`;
-              },
+              baseCanvases: canvases,
+              noteXPositions: xPos,
+              onProgress: updateProgress,
             });
             progressText.textContent = '完了しました';
           } catch (e) {

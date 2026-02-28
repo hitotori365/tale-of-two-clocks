@@ -28,6 +28,7 @@ export const playAllNotes = (
     window.setTimeout(action, delayMs);
 
   for (let i = 0; i < document.notes.length; i++) {
+    if (document.notes[i].isRest) continue;
     scheduleAction(() => {
       audioPlayer.playChord(document.notes[i].keys, timeline.noteDurations[i]);
     }, timeline.noteStartTimes[i] * 1000);

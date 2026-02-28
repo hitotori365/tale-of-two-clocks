@@ -44,6 +44,76 @@ export class ChordInteraction {
     return this.activeMeasureIndex !== null;
   }
 
+  private calcBeatWidth(
+    beatNoteMapping: import('../models/ScoreDocument').BeatNoteEntry[][],
+    xPositions: number[],
+    measureIdx: number,
+    entryIdx: number,
+  ): number {
+    const entries = beatNoteMapping[measureIdx];
+    const noteX = xPositions[entries[entryIdx].noteIndex];
+
+    let width: number;
+    if (entryIdx + 1 < entries.length) {
+      width = xPositions[entries[entryIdx + 1].noteIndex] - noteX - 4;
+    } else if (measureIdx + 1 < beatNoteMapping.length && beatNoteMapping[measureIdx + 1].length > 0) {
+      width = xPositions[beatNoteMapping[measureIdx + 1][0].noteIndex] - noteX - 4;
+    } else {
+      width = 60;
+    }
+    return Math.max(width, 30);
+  }
+
+  private createBeatIndicator(
+    noteX: number,
+    width: number,
+    chordText: string | undefined,
+    measureIdx: number,
+    beat: number,
+  ): HTMLElement {
+    const indicator = document.createElement('div');
+    indicator.className = 'beat-indicator';
+    indicator.style.cssText = `
+      position: absolute;
+      left: ${noteX - 10}px;
+      top: 0;
+      width: ${width}px;
+      height: 100%;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      background: transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: #888;
+      transition: background 0.15s, border-color 0.15s;
+      box-sizing: border-box;
+    `;
+
+    if (chordText) {
+      indicator.textContent = chordText;
+      indicator.style.color = '#555';
+      indicator.style.fontWeight = '500';
+    }
+
+    indicator.addEventListener('mouseenter', () => {
+      indicator.style.background = 'rgba(59,130,246,0.08)';
+      indicator.style.borderColor = '#93b8f7';
+    });
+    indicator.addEventListener('mouseleave', () => {
+      indicator.style.background = 'transparent';
+      indicator.style.borderColor = 'transparent';
+    });
+    indicator.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.showPopover(measureIdx, beat);
+    });
+
+    return indicator;
+  }
+
   private showBeatIndicators(): void {
     this.removeBeatIndicators();
 
@@ -57,61 +127,10 @@ export class ChordInteraction {
 
       for (let i = 0; i < entries.length; i++) {
         const { beat, noteIndex } = entries[i];
-        const noteX = xPositions[noteIndex];
-
-        // 拍矩形の幅を計算: 次の拍のX位置との差、または固定幅
-        let width: number;
-        if (i + 1 < entries.length) {
-          width = xPositions[entries[i + 1].noteIndex] - noteX - 4;
-        } else if (m + 1 < beatNoteMapping.length && beatNoteMapping[m + 1].length > 0) {
-          width = xPositions[beatNoteMapping[m + 1][0].noteIndex] - noteX - 4;
-        } else {
-          width = 60;
-        }
-        width = Math.max(width, 30);
-
-        const indicator = document.createElement('div');
-        indicator.className = 'beat-indicator';
-        indicator.style.cssText = `
-          position: absolute;
-          left: ${noteX - 10}px;
-          top: 0;
-          width: ${width}px;
-          height: 100%;
-          border: 1px solid transparent;
-          border-radius: 4px;
-          background: transparent;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 11px;
-          color: #888;
-          transition: background 0.15s, border-color 0.15s;
-          box-sizing: border-box;
-        `;
-
-        const chordText = measureChords.get(beat);
-        if (chordText) {
-          indicator.textContent = chordText;
-          indicator.style.color = '#555';
-          indicator.style.fontWeight = '500';
-        }
-
-        indicator.addEventListener('mouseenter', () => {
-          indicator.style.background = 'rgba(59,130,246,0.08)';
-          indicator.style.borderColor = '#93b8f7';
-        });
-        indicator.addEventListener('mouseleave', () => {
-          indicator.style.background = 'transparent';
-          indicator.style.borderColor = 'transparent';
-        });
-
-        indicator.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.showPopover(m, beat);
-        });
-
+        const width = this.calcBeatWidth(beatNoteMapping, xPositions, m, i);
+        const indicator = this.createBeatIndicator(
+          xPositions[noteIndex], width, measureChords.get(beat), m, beat,
+        );
         this.config.clickZone.appendChild(indicator);
         this.beatIndicators.push(indicator);
       }

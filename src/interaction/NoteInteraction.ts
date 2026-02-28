@@ -54,6 +54,7 @@ export class NoteInteraction {
     let bestDist = Infinity;
 
     for (let i = 0; i < xPositions.length; i++) {
+      if (this.config.scoreDocument.notes[i]?.isRest) continue;
       const dist = Math.abs(svgX - xPositions[i]);
       if (dist < bestDist) {
         bestDist = dist;
@@ -126,55 +127,47 @@ export class NoteInteraction {
 
   // --- Hybrid mode (SVG notehead clone) ---
 
+  /** 祖先チェーンを辿り、指定属性の値を探す */
+  private findAncestorAttr(start: Element, attr: string): string | null {
+    let node: Element | null = start;
+    while (node) {
+      const val = node.getAttribute(attr);
+      if (val) return val;
+      node = node.parentElement;
+    }
+    return null;
+  }
+
   /** 祖先<g>チェーンからフォント属性を収集して<text>に明示的に設定する */
   private resolveInheritedFontAttrs(textEl: SVGTextElement, ancestor: Element): void {
     const fontAttrs = ['font-family', 'font-size', 'font-weight', 'font-style'] as const;
     for (const attr of fontAttrs) {
-      if (!textEl.hasAttribute(attr)) {
-        // 祖先を辿って最初に見つかった値を使う
-        let node: Element | null = ancestor;
-        while (node) {
-          const val = node.getAttribute(attr);
-          if (val) {
-            textEl.setAttribute(attr, val);
-            break;
-          }
-          node = node.parentElement;
-        }
-      }
+      if (textEl.hasAttribute(attr)) continue;
+      const val = this.findAncestorAttr(ancestor, attr);
+      if (val) textEl.setAttribute(attr, val);
     }
   }
 
-  private createHybridClone(noteIndex: number): void {
+  /** VexFlowのSVGからnoteIndex番目のノートヘッド<text>要素を取得する */
+  private findNoteheadText(noteIndex: number): { text: SVGTextElement; notehead: Element; scoreSvg: SVGSVGElement } | null {
     const scoreSvg = this.config.container.querySelector('svg');
-    if (!scoreSvg) return;
+    if (!scoreSvg) return null;
 
-    // VexFlowが描画した .vf-stavenote を全て取得し、noteIndex番目を選ぶ
     const staveNotes = scoreSvg.querySelectorAll('.vf-stavenote');
     const targetNote = staveNotes[noteIndex];
-    if (!targetNote) return;
+    if (!targetNote) return null;
 
-    // .vf-notehead 内の <text> 要素を取得（音符グリフ本体）
     const notehead = targetNote.querySelector('.vf-notehead');
-    if (!notehead) return;
+    if (!notehead) return null;
 
-    const originalText = notehead.querySelector('text');
-    if (!originalText) return;
+    const text = notehead.querySelector('text');
+    if (!text) return null;
 
-    // <text>要素をクローンし、フォント属性を明示的に解決
-    const clonedText = originalText.cloneNode(true) as SVGTextElement;
-    this.resolveInheritedFontAttrs(clonedText, notehead as Element);
+    return { text, notehead, scoreSvg };
+  }
 
-    // 赤色半透明 + stroke:none（グリフ輪郭を描画しない）
-    clonedText.style.fill = 'rgba(255, 0, 0, 0.5)';
-    clonedText.style.stroke = 'none';
-
-    // 元のノートヘッドの位置を取得
-    const headBBox = notehead.getBoundingClientRect();
-    const svgRect = scoreSvg.getBoundingClientRect();
-    this.cloneOriginalY = headBBox.top + headBBox.height / 2 - svgRect.top;
-
-    // SVGオーバーレイを作成（score SVGと同サイズ、position:absolute）
+  /** score SVGと同サイズのオーバーレイSVGを生成する */
+  private createSvgOverlay(scoreSvg: SVGSVGElement): SVGSVGElement {
     const svgWidth = scoreSvg.getAttribute('width') || scoreSvg.clientWidth.toString();
     const svgHeight = scoreSvg.getAttribute('height') || scoreSvg.clientHeight.toString();
     const viewBox = scoreSvg.getAttribute('viewBox') || `0 0 ${svgWidth} ${svgHeight}`;
@@ -190,8 +183,27 @@ export class NoteInteraction {
       pointer-events: none;
       z-index: 10;
     `;
+    return overlay;
+  }
 
-    // ラッパーグループ（translateで移動する対象）
+  private createHybridClone(noteIndex: number): void {
+    const found = this.findNoteheadText(noteIndex);
+    if (!found) return;
+    const { text: originalText, notehead, scoreSvg } = found;
+
+    // <text>要素をクローンし、フォント属性を明示的に解決
+    const clonedText = originalText.cloneNode(true) as SVGTextElement;
+    this.resolveInheritedFontAttrs(clonedText, notehead as Element);
+    clonedText.style.fill = 'rgba(255, 0, 0, 0.5)';
+    clonedText.style.stroke = 'none';
+
+    // 元のノートヘッドの位置を取得
+    const headBBox = notehead.getBoundingClientRect();
+    const svgRect = scoreSvg.getBoundingClientRect();
+    this.cloneOriginalY = headBBox.top + headBBox.height / 2 - svgRect.top;
+
+    // オーバーレイ作成
+    const overlay = this.createSvgOverlay(scoreSvg);
     const wrapperG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     wrapperG.appendChild(clonedText);
     overlay.appendChild(wrapperG);

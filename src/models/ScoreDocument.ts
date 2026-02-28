@@ -4,6 +4,7 @@ export type NoteData = {
   id: string;
   keys: string[];
   durationBeats: number;
+  isRest?: boolean;
 };
 
 export type BeatNoteEntry = {
@@ -20,6 +21,7 @@ export class ScoreDocument {
   notes: NoteData[];
   metadata: ScoreMetadata;
   chords: Map<number, Map<number, string>> = new Map();
+  private nextNoteId: number = 100;
 
   private listeners: Map<string, Set<() => void>> = new Map();
 
@@ -133,6 +135,36 @@ export class ScoreDocument {
     }
 
     return result;
+  }
+
+  addMeasure(): void {
+    const measures = this.computeMeasureNoteIndices();
+    const newMeasureIndex = measures.length;
+    const [numBeats] = getTimeSignatureAtMeasure(newMeasureIndex);
+    for (let i = 0; i < numBeats; i++) {
+      this.notes.push({
+        id: `n${this.nextNoteId++}`,
+        keys: ['b/4'],
+        durationBeats: 0.5,
+        isRest: true,
+      });
+    }
+    this.emit('change');
+  }
+
+  removeMeasure(): void {
+    const measures = this.computeMeasureNoteIndices();
+    if (measures.length <= 1) return;
+
+    const lastMeasure = measures[measures.length - 1];
+    const removeFrom = lastMeasure[0];
+    this.notes.splice(removeFrom);
+
+    // 該当小節のコードも削除
+    const lastMeasureIndex = measures.length - 1;
+    this.chords.delete(lastMeasureIndex);
+
+    this.emit('change');
   }
 
   setNoteKeys(index: number, keys: string[]): void {

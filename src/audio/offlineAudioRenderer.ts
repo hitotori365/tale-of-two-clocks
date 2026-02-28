@@ -14,6 +14,7 @@ export async function renderAudioOffline(
   );
 
   for (let i = 0; i < document.notes.length; i++) {
+    if (document.notes[i].isRest) continue;
     scheduleChord(
       offlineCtx,
       document.notes[i].keys,

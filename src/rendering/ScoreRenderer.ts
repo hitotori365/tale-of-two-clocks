@@ -2,26 +2,35 @@ import { Renderer, Stave, StaveNote, Voice, Formatter, Annotation } from 'vexflo
 import type { ScoreDocument } from '../models/ScoreDocument';
 import { getTimeSignatureAtMeasure } from '../stores/timeSignatureStore';
 
-const CANVAS_WIDTH = 500;
+const FIRST_STAVE_WIDTH = 400;
+const SUBSEQUENT_STAVE_WIDTH = 300;
+const STAVE_X = 10;
+const STAVE_Y = 40;
 const CANVAS_HEIGHT = 200;
-const STAVE_CONFIG = { x: 10, y: 40, width: 400 };
 
-function durationBeatsToVexDuration(durationBeats: number): string {
-  if (durationBeats === 0.5) return 'q';
-  if (durationBeats === 1) return 'h';
-  if (durationBeats === 2) return 'w';
-  if (durationBeats === 0.25) return '8';
-  if (durationBeats === 0.125) return '16';
-  return 'q';
+function getCanvasWidth(measureCount: number): number {
+  if (measureCount <= 1) return STAVE_X + FIRST_STAVE_WIDTH + 10;
+  return STAVE_X + FIRST_STAVE_WIDTH + SUBSEQUENT_STAVE_WIDTH * (measureCount - 1) + 10;
 }
 
-function createVexNotes(document: ScoreDocument): StaveNote[] {
-  return document.notes.map(note =>
-    new StaveNote({
-      keys: note.keys,
-      duration: durationBeatsToVexDuration(note.durationBeats),
-    }),
-  );
+function durationBeatsToVexDuration(durationBeats: number, isRest?: boolean): string {
+  let base: string;
+  if (durationBeats === 0.5) base = 'q';
+  else if (durationBeats === 1) base = 'h';
+  else if (durationBeats === 2) base = 'w';
+  else if (durationBeats === 0.25) base = '8';
+  else if (durationBeats === 0.125) base = '16';
+  else base = 'q';
+  return isRest ? base + 'r' : base;
+}
+
+function createVexNotesForMeasure(document: ScoreDocument, noteIndices: number[]): StaveNote[] {
+  return noteIndices.map(i => {
+    const note = document.notes[i];
+    const duration = durationBeatsToVexDuration(note.durationBeats, note.isRest);
+    const keys = note.isRest ? ['b/4'] : note.keys;
+    return new StaveNote({ keys, duration });
+  });
 }
 
 function styleNote(note: StaveNote, isPlaying: boolean): StaveNote {
@@ -33,22 +42,31 @@ function styleNote(note: StaveNote, isPlaying: boolean): StaveNote {
   return note;
 }
 
-function styleAllNotes(notes: StaveNote[], playingIndex?: number): StaveNote[] {
-  return notes.map((note, index) => styleNote(note, index === playingIndex));
-}
-
-function addChordAnnotations(vexNotes: StaveNote[], document: ScoreDocument): void {
+function addChordAnnotations(allVexNotes: StaveNote[], document: ScoreDocument): void {
   const beatNoteMapping = document.computeBeatNoteMapping();
+  const measures = document.computeMeasureNoteIndices();
+
+  // Build a map from global note index to vexNote index (which is sequential)
+  const globalToVex = new Map<number, number>();
+  let vexIdx = 0;
+  for (const measure of measures) {
+    for (const noteIndex of measure) {
+      globalToVex.set(noteIndex, vexIdx++);
+    }
+  }
+
   for (let m = 0; m < beatNoteMapping.length; m++) {
     const measureChords = document.getMeasureChords(m);
     if (measureChords.size === 0) continue;
     for (const { beat, noteIndex } of beatNoteMapping[m]) {
       const chordText = measureChords.get(beat);
       if (!chordText) continue;
+      const vi = globalToVex.get(noteIndex);
+      if (vi === undefined) continue;
       const annotation = new Annotation(chordText)
         .setFont('Arial', 12, 'normal')
         .setVerticalJustification(Annotation.VerticalJustify.TOP);
-      vexNotes[noteIndex].addModifier(annotation);
+      allVexNotes[vi].addModifier(annotation);
     }
   }
 }
@@ -67,59 +85,107 @@ export class ScoreRenderer {
     highlightIndex?: number,
   ): number[] {
     container.innerHTML = '';
+    const measures = document.computeMeasureNoteIndices();
+    const measureCount = measures.length;
+    const canvasWidth = getCanvasWidth(measureCount);
+
     const renderer = new Renderer(container as HTMLDivElement, Renderer.Backends.SVG);
-    renderer.resize(CANVAS_WIDTH, CANVAS_HEIGHT);
+    renderer.resize(canvasWidth, CANVAS_HEIGHT);
     const context = renderer.getContext();
 
-    const [numBeats, beatValue] = getTimeSignatureAtMeasure(0);
-    const stave = new Stave(STAVE_CONFIG.x, STAVE_CONFIG.y, STAVE_CONFIG.width);
-    stave.addClef('treble').addTimeSignature(`${numBeats}/${beatValue}`);
-    stave.setContext(context).draw();
+    const allVexNotes: StaveNote[] = [];
+    let globalIdx = 0;
 
-    const vexNotes = createVexNotes(document);
-    const styledNotes = styleAllNotes(vexNotes, highlightIndex);
-    addChordAnnotations(styledNotes, document);
+    for (let m = 0; m < measureCount; m++) {
+      const [numBeats, beatValue] = getTimeSignatureAtMeasure(m);
+      const staveWidth = m === 0 ? FIRST_STAVE_WIDTH : SUBSEQUENT_STAVE_WIDTH;
+      const staveX = m === 0 ? STAVE_X : STAVE_X + FIRST_STAVE_WIDTH + SUBSEQUENT_STAVE_WIDTH * (m - 1);
 
-    const voice = new Voice({ numBeats, beatValue });
-    voice.addTickables(styledNotes);
-    new Formatter().joinVoices([voice]).format([voice], 350);
-    voice.draw(context, stave);
+      const stave = new Stave(staveX, STAVE_Y, staveWidth);
+      if (m === 0) {
+        stave.addClef('treble').addTimeSignature(`${numBeats}/${beatValue}`);
+      }
+      stave.setContext(context).draw();
 
-    return getNoteXPositions(styledNotes);
+      const noteIndices = measures[m];
+      const vexNotes = createVexNotesForMeasure(document, noteIndices);
+
+      // Style notes
+      for (let i = 0; i < vexNotes.length; i++) {
+        const isPlaying = highlightIndex !== undefined && noteIndices[i] === highlightIndex;
+        styleNote(vexNotes[i], isPlaying);
+      }
+
+      allVexNotes.push(...vexNotes);
+
+      const voice = new Voice({ numBeats, beatValue });
+      voice.addTickables(vexNotes);
+      const formatWidth = staveWidth - (m === 0 ? 80 : 30);
+      new Formatter().joinVoices([voice]).format([voice], formatWidth);
+      voice.draw(context, stave);
+
+      globalIdx += noteIndices.length;
+    }
+
+    addChordAnnotations(allVexNotes, document);
+
+    return getNoteXPositions(allVexNotes);
   }
 
   renderToCanvas(
     document: ScoreDocument,
     highlightIndex?: number,
   ): { canvas: HTMLCanvasElement; xPositions: number[] } {
+    const measures = document.computeMeasureNoteIndices();
+    const measureCount = measures.length;
+    const canvasWidth = getCanvasWidth(measureCount);
+
     const canvas = window.document.createElement('canvas');
-    canvas.width = CANVAS_WIDTH;
+    canvas.width = canvasWidth;
     canvas.height = CANVAS_HEIGHT;
 
     const ctx2d = canvas.getContext('2d')!;
     ctx2d.fillStyle = '#ffffff';
-    ctx2d.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx2d.fillRect(0, 0, canvasWidth, CANVAS_HEIGHT);
 
     const vfRenderer = new Renderer(canvas, Renderer.Backends.CANVAS);
-    vfRenderer.resize(CANVAS_WIDTH, CANVAS_HEIGHT);
+    vfRenderer.resize(canvasWidth, CANVAS_HEIGHT);
     const vfContext = vfRenderer.getContext();
 
-    const [numBeats, beatValue] = getTimeSignatureAtMeasure(0);
-    const stave = new Stave(STAVE_CONFIG.x, STAVE_CONFIG.y, STAVE_CONFIG.width);
-    stave.addClef('treble').addTimeSignature(`${numBeats}/${beatValue}`);
-    stave.setContext(vfContext).draw();
+    const allVexNotes: StaveNote[] = [];
 
-    const vexNotes = createVexNotes(document);
-    const styledNotes = styleAllNotes(vexNotes, highlightIndex);
-    addChordAnnotations(styledNotes, document);
+    for (let m = 0; m < measureCount; m++) {
+      const [numBeats, beatValue] = getTimeSignatureAtMeasure(m);
+      const staveWidth = m === 0 ? FIRST_STAVE_WIDTH : SUBSEQUENT_STAVE_WIDTH;
+      const staveX = m === 0 ? STAVE_X : STAVE_X + FIRST_STAVE_WIDTH + SUBSEQUENT_STAVE_WIDTH * (m - 1);
 
-    const voice = new Voice({ numBeats, beatValue });
-    voice.addTickables(styledNotes);
-    new Formatter().joinVoices([voice]).format([voice], 350);
-    voice.draw(vfContext, stave);
+      const stave = new Stave(staveX, STAVE_Y, staveWidth);
+      if (m === 0) {
+        stave.addClef('treble').addTimeSignature(`${numBeats}/${beatValue}`);
+      }
+      stave.setContext(vfContext).draw();
 
-    const dpiScale = canvas.width / CANVAS_WIDTH;
-    const xPositions = getNoteXPositions(styledNotes).map(x => x * dpiScale);
+      const noteIndices = measures[m];
+      const vexNotes = createVexNotesForMeasure(document, noteIndices);
+
+      for (let i = 0; i < vexNotes.length; i++) {
+        const isPlaying = highlightIndex !== undefined && noteIndices[i] === highlightIndex;
+        styleNote(vexNotes[i], isPlaying);
+      }
+
+      allVexNotes.push(...vexNotes);
+
+      const voice = new Voice({ numBeats, beatValue });
+      voice.addTickables(vexNotes);
+      const formatWidth = staveWidth - (m === 0 ? 80 : 30);
+      new Formatter().joinVoices([voice]).format([voice], formatWidth);
+      voice.draw(vfContext, stave);
+    }
+
+    addChordAnnotations(allVexNotes, document);
+
+    const dpiScale = canvas.width / canvasWidth;
+    const xPositions = getNoteXPositions(allVexNotes).map(x => x * dpiScale);
 
     return { canvas, xPositions };
   }

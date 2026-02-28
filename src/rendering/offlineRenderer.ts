@@ -1,4 +1,6 @@
 import type { Timeline } from '../models/Timeline';
+import type { NotePosition } from '../models/ScoreDocument';
+import { ROW_HEIGHT } from './ScoreRenderer';
 
 export class OfflineRenderer {
   private _canvas: HTMLCanvasElement;
@@ -20,7 +22,7 @@ export class OfflineRenderer {
 
   renderFrame(
     elapsedSeconds: number,
-    noteXPositions: number[],
+    notePositions: NotePosition[],
     timeline: Timeline,
   ): void {
     const { ctx, _canvas: canvas } = this;
@@ -36,25 +38,27 @@ export class OfflineRenderer {
       ctx.drawImage(this.baseImages[currentIndex], 0, 0);
     }
 
-    const x = timeline.getPlayheadX(elapsedSeconds, noteXPositions);
-    this.drawPlayhead(x, canvas.height);
+    const pos = timeline.getPlayheadPosition(elapsedSeconds, notePositions);
+    this.drawPlayhead(pos.x, pos.y, ROW_HEIGHT);
   }
 
-  private drawPlayhead(x: number, height: number): void {
+  private drawPlayhead(x: number, y: number, rowHeight: number): void {
     const { ctx } = this;
+    const top = y;
+    const height = rowHeight;
 
     ctx.fillStyle = 'rgba(0,0,0,0.15)';
     ctx.beginPath();
-    ctx.roundRect(x + 2, 0, 4, height, 2);
+    ctx.roundRect(x + 2, top, 4, height, 2);
     ctx.fill();
 
-    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    const gradient = ctx.createLinearGradient(0, top, 0, top + height);
     gradient.addColorStop(0, '#FF4444');
     gradient.addColorStop(0.5, '#FF0000');
     gradient.addColorStop(1, '#CC0000');
     ctx.fillStyle = gradient;
     ctx.beginPath();
-    ctx.roundRect(x, 0, 3, height, 1);
+    ctx.roundRect(x, top, 3, height, 1);
     ctx.fill();
   }
 

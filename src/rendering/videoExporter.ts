@@ -9,7 +9,7 @@ import {
 } from 'mediabunny';
 import { OfflineRenderer } from './offlineRenderer';
 import { renderAudioOffline } from '../audio/offlineAudioRenderer';
-import type { ScoreDocument } from '../models/ScoreDocument';
+import type { ScoreDocument, NotePosition } from '../models/ScoreDocument';
 import type { Timeline } from '../models/Timeline';
 
 export type ExportFormat = 'mp4' | 'mov';
@@ -19,7 +19,7 @@ export type ExportOptions = {
   document: ScoreDocument;
   timeline: Timeline;
   baseCanvases: HTMLCanvasElement[];
-  noteXPositions: number[];
+  notePositions: NotePosition[];
   fps?: number;
   onProgress?: (progress: number) => void;
 };
@@ -30,7 +30,7 @@ export async function exportVideo(options: ExportOptions): Promise<void> {
     document,
     timeline,
     baseCanvases,
-    noteXPositions,
+    notePositions,
     fps = 30,
     onProgress,
   } = options;
@@ -70,7 +70,7 @@ export async function exportVideo(options: ExportOptions): Promise<void> {
 
   for (let frame = 0; frame < totalFrames; frame++) {
     const elapsed = frame * frameDuration;
-    renderer.renderFrame(elapsed, noteXPositions, timeline);
+    renderer.renderFrame(elapsed, notePositions, timeline);
     await videoSource.add(elapsed, frameDuration);
 
     if (onProgress) {

@@ -1,11 +1,12 @@
 import type { AudioPlayer } from './audio/audioPlayer';
-import type { ScoreDocument } from './models/ScoreDocument';
+import type { ScoreDocument, NotePosition } from './models/ScoreDocument';
 import type { Timeline } from './models/Timeline';
 import type { ScoreRenderer } from './rendering/ScoreRenderer';
 
-export const showPlayhead = (playheadEl: HTMLElement, x: number): void => {
+export const showPlayhead = (playheadEl: HTMLElement, x: number, y: number): void => {
   playheadEl.style.display = 'block';
   playheadEl.style.transform = `translateX(${x}px)`;
+  playheadEl.style.top = `${y}px`;
 };
 
 export const hidePlayhead = (playheadEl: HTMLElement): void => {
@@ -18,12 +19,11 @@ export const playAllNotes = (
   notationEl: HTMLElement,
   renderer: ScoreRenderer,
   audioPlayer: AudioPlayer,
-  noteXPositions: number[],
+  notePositions: NotePosition[],
   playheadEl: HTMLElement,
+  measuresPerLine: number,
   onComplete: () => void,
 ): void => {
-  const beatDuration = document.beatDuration;
-
   const scheduleAction = (action: () => void, delayMs: number): number =>
     window.setTimeout(action, delayMs);
 
@@ -40,7 +40,7 @@ export const playAllNotes = (
   const update = () => {
     const elapsed = (performance.now() - animStartTime) / 1000;
     if (elapsed >= timeline.totalDuration) {
-      renderer.renderToSVG(notationEl, document);
+      renderer.renderToSVG(notationEl, document, undefined, measuresPerLine);
       hidePlayhead(playheadEl);
       onComplete();
       return;
@@ -49,12 +49,12 @@ export const playAllNotes = (
     const currentIndex = timeline.getIndexAtTime(elapsed);
 
     if (currentIndex !== prevNoteIndex) {
-      renderer.renderToSVG(notationEl, document, currentIndex);
+      renderer.renderToSVG(notationEl, document, currentIndex, measuresPerLine);
       prevNoteIndex = currentIndex;
     }
 
-    const x = timeline.getPlayheadX(elapsed, noteXPositions);
-    showPlayhead(playheadEl, x);
+    const pos = timeline.getPlayheadPosition(elapsed, notePositions);
+    showPlayhead(playheadEl, pos.x, pos.y);
     requestAnimationFrame(update);
   };
 

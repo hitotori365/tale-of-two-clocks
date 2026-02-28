@@ -1,5 +1,7 @@
 import { getTimeSignatureAtMeasure } from '../stores/timeSignatureStore';
 
+export type NotePosition = { x: number; y: number };
+
 export type NoteData = {
   id: string;
   keys: string[];
@@ -137,32 +139,46 @@ export class ScoreDocument {
     return result;
   }
 
-  addMeasure(): void {
-    const measures = this.computeMeasureNoteIndices();
-    const newMeasureIndex = measures.length;
-    const [numBeats] = getTimeSignatureAtMeasure(newMeasureIndex);
-    for (let i = 0; i < numBeats; i++) {
+  addLine(measuresPerLine: number): void {
+    const currentCount = this.computeMeasureNoteIndices().length;
+    const remainder = currentCount % measuresPerLine;
+    // 端数がある場合: 倍数になるまでパディング + 1行分追加
+    // 端数がない場合: 1行分追加
+    const toAdd = remainder === 0
+      ? measuresPerLine
+      : (measuresPerLine - remainder) + measuresPerLine;
+
+    for (let m = 0; m < toAdd; m++) {
+      const measures = this.computeMeasureNoteIndices();
+      const newMeasureIndex = measures.length;
+      const [numBeats] = getTimeSignatureAtMeasure(newMeasureIndex);
+      // 全休符: 1つの全音休符（durationBeats = numBeats * 0.5）
       this.notes.push({
         id: `n${this.nextNoteId++}`,
         keys: ['b/4'],
-        durationBeats: 0.5,
+        durationBeats: numBeats * 0.5,
         isRest: true,
       });
     }
     this.emit('change');
   }
 
-  removeMeasure(): void {
+  removeLine(measuresPerLine: number): void {
     const measures = this.computeMeasureNoteIndices();
-    if (measures.length <= 1) return;
+    const currentCount = measures.length;
+    const remainder = currentCount % measuresPerLine;
+    // 端数がある場合: 端数分だけ削除して倍数に揃える
+    // 端数がない場合: 1行分削除
+    const toRemove = remainder > 0 ? remainder : measuresPerLine;
 
-    const lastMeasure = measures[measures.length - 1];
-    const removeFrom = lastMeasure[0];
+    if (currentCount - toRemove < 1) return; // 最低1小節は残す
+
+    const removeFrom = measures[currentCount - toRemove][0];
+    // コード削除
+    for (let i = currentCount - toRemove; i < currentCount; i++) {
+      this.chords.delete(i);
+    }
     this.notes.splice(removeFrom);
-
-    // 該当小節のコードも削除
-    const lastMeasureIndex = measures.length - 1;
-    this.chords.delete(lastMeasureIndex);
 
     this.emit('change');
   }
@@ -180,6 +196,10 @@ export class ScoreDocument {
         { id: 'n2', keys: ['d/4'], durationBeats: 0.5 },
         { id: 'n3', keys: ['e/4'], durationBeats: 0.5 },
         { id: 'n4', keys: ['f/4'], durationBeats: 0.5 },
+        { id: 'n5', keys: ['g/4'], durationBeats: 0.5 },
+        { id: 'n6', keys: ['a/4'], durationBeats: 0.5 },
+        { id: 'n7', keys: ['b/4'], durationBeats: 0.5 },
+        { id: 'n8', keys: ['c/5'], durationBeats: 0.5 },
       ],
       { tempo: 120, timeSignature: [4, 4] },
     );

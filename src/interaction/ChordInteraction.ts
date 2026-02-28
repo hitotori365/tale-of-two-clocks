@@ -1,4 +1,4 @@
-import type { ScoreDocument } from '../models/ScoreDocument';
+import type { ScoreDocument, NotePosition } from '../models/ScoreDocument';
 
 export type ChordInteractionConfig = {
   wrapper: HTMLElement;
@@ -7,7 +7,7 @@ export type ChordInteractionConfig = {
   popover: HTMLElement;
   input: HTMLInputElement;
   scoreDocument: ScoreDocument;
-  getNoteXPositions: () => number[];
+  getNotePositions: () => NotePosition[];
   isPlaybackActive: () => boolean;
 };
 
@@ -46,18 +46,24 @@ export class ChordInteraction {
 
   private calcBeatWidth(
     beatNoteMapping: import('../models/ScoreDocument').BeatNoteEntry[][],
-    xPositions: number[],
+    positions: NotePosition[],
     measureIdx: number,
     entryIdx: number,
   ): number {
     const entries = beatNoteMapping[measureIdx];
-    const noteX = xPositions[entries[entryIdx].noteIndex];
+    const noteX = positions[entries[entryIdx].noteIndex].x;
 
     let width: number;
     if (entryIdx + 1 < entries.length) {
-      width = xPositions[entries[entryIdx + 1].noteIndex] - noteX - 4;
+      width = positions[entries[entryIdx + 1].noteIndex].x - noteX - 4;
     } else if (measureIdx + 1 < beatNoteMapping.length && beatNoteMapping[measureIdx + 1].length > 0) {
-      width = xPositions[beatNoteMapping[measureIdx + 1][0].noteIndex] - noteX - 4;
+      const nextPos = positions[beatNoteMapping[measureIdx + 1][0].noteIndex];
+      // 行が異なる場合はデフォルト幅
+      if (nextPos.y !== positions[entries[entryIdx].noteIndex].y) {
+        width = 60;
+      } else {
+        width = nextPos.x - noteX - 4;
+      }
     } else {
       width = 60;
     }
@@ -65,7 +71,7 @@ export class ChordInteraction {
   }
 
   private createBeatIndicator(
-    noteX: number,
+    notePos: NotePosition,
     width: number,
     chordText: string | undefined,
     measureIdx: number,
@@ -75,10 +81,10 @@ export class ChordInteraction {
     indicator.className = 'beat-indicator';
     indicator.style.cssText = `
       position: absolute;
-      left: ${noteX - 10}px;
-      top: 0;
+      left: ${notePos.x - 10}px;
+      top: ${notePos.y - 10}px;
       width: ${width}px;
-      height: 100%;
+      height: 30px;
       border: 1px solid transparent;
       border-radius: 4px;
       background: transparent;
@@ -118,8 +124,8 @@ export class ChordInteraction {
     this.removeBeatIndicators();
 
     const beatNoteMapping = this.config.scoreDocument.computeBeatNoteMapping();
-    const xPositions = this.config.getNoteXPositions();
-    if (beatNoteMapping.length === 0 || xPositions.length === 0) return;
+    const positions = this.config.getNotePositions();
+    if (beatNoteMapping.length === 0 || positions.length === 0) return;
 
     for (let m = 0; m < beatNoteMapping.length; m++) {
       const entries = beatNoteMapping[m];
@@ -127,9 +133,9 @@ export class ChordInteraction {
 
       for (let i = 0; i < entries.length; i++) {
         const { beat, noteIndex } = entries[i];
-        const width = this.calcBeatWidth(beatNoteMapping, xPositions, m, i);
+        const width = this.calcBeatWidth(beatNoteMapping, positions, m, i);
         const indicator = this.createBeatIndicator(
-          xPositions[noteIndex], width, measureChords.get(beat), m, beat,
+          positions[noteIndex], width, measureChords.get(beat), m, beat,
         );
         this.config.clickZone.appendChild(indicator);
         this.beatIndicators.push(indicator);
@@ -149,15 +155,15 @@ export class ChordInteraction {
     this.activeBeatIndex = beatIndex;
 
     const beatNoteMapping = this.config.scoreDocument.computeBeatNoteMapping();
-    const xPositions = this.config.getNoteXPositions();
+    const positions = this.config.getNotePositions();
     const entries = beatNoteMapping[measureIndex];
     const entry = entries.find(e => e.beat === beatIndex);
-    const noteX = entry ? xPositions[entry.noteIndex] : xPositions[0];
+    const notePos = entry ? positions[entry.noteIndex] : positions[0];
 
     const popover = this.config.popover;
     popover.style.display = 'block';
-    popover.style.left = `${noteX - 10}px`;
-    popover.style.top = '0px';
+    popover.style.left = `${notePos.x - 10}px`;
+    popover.style.top = `${notePos.y - 10}px`;
 
     const existing = this.config.scoreDocument.getChord(measureIndex, beatIndex);
     this.config.input.value = existing ?? '';

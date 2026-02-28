@@ -1,11 +1,14 @@
-import type { ScoreDocument } from '../models/ScoreDocument';
+import type { ScoreDocument, NotePosition } from '../models/ScoreDocument';
 import { yToNearestPitch, pitchToY, snapY } from './pitchMap';
+import { ROW_HEIGHT } from '../rendering/ScoreRenderer';
+
+const STAVE_Y_BASE = 40; // pitchMapはこの値を前提としている
 
 export type NoteInteractionConfig = {
   wrapper: HTMLElement;
   container: HTMLElement;
   scoreDocument: ScoreDocument;
-  getNoteXPositions: () => number[];
+  getNotePositions: () => NotePosition[];
   isPlaybackActive: () => boolean;
 };
 
@@ -13,6 +16,7 @@ type DragState = {
   noteIndex: number;
   originalKey: string;
   startY: number;
+  rowOffset: number; // staveY - STAVE_Y_BASE
 };
 
 const HIT_TOLERANCE_X = 20;
@@ -49,13 +53,17 @@ export class NoteInteraction {
   }
 
   private findNoteAtPosition(svgX: number, svgY: number): number | null {
-    const xPositions = this.config.getNoteXPositions();
+    const positions = this.config.getNotePositions();
     let bestIndex = -1;
     let bestDist = Infinity;
 
-    for (let i = 0; i < xPositions.length; i++) {
+    for (let i = 0; i < positions.length; i++) {
       if (this.config.scoreDocument.notes[i]?.isRest) continue;
-      const dist = Math.abs(svgX - xPositions[i]);
+      // Y距離で行を絞り込む（staveYの中心付近にいるか）
+      const rowCenterY = positions[i].y + 50; // stave中央付近
+      if (Math.abs(svgY - rowCenterY) > ROW_HEIGHT / 2) continue;
+
+      const dist = Math.abs(svgX - positions[i].x);
       if (dist < bestDist) {
         bestDist = dist;
         bestIndex = i;
@@ -66,7 +74,8 @@ export class NoteInteraction {
 
     // Y位置の検証: 現在の音符のY座標と比較
     const currentKey = this.config.scoreDocument.notes[bestIndex].keys[0];
-    const noteY = pitchToY(currentKey);
+    const rowOffset = positions[bestIndex].y - STAVE_Y_BASE;
+    const noteY = pitchToY(currentKey) + rowOffset;
     if (Math.abs(svgY - noteY) > HIT_TOLERANCE_Y) return null;
 
     return bestIndex;
@@ -83,12 +92,15 @@ export class NoteInteraction {
 
     e.preventDefault();
 
+    const positions = this.config.getNotePositions();
+    const rowOffset = positions[noteIndex].y - STAVE_Y_BASE;
     const originalKey = this.config.scoreDocument.notes[noteIndex].keys[0];
 
     this.dragState = {
       noteIndex,
       originalKey,
       startY: svgY,
+      rowOffset,
     };
 
     this.createHybridClone(noteIndex);
@@ -102,16 +114,18 @@ export class NoteInteraction {
     if (!this.dragState) return;
 
     const svgY = this.getSvgY(e.clientY);
-    const snappedY = snapY(svgY);
+    // rowOffsetを引いてpitchMap座標系に変換
+    const snappedY = snapY(svgY - this.dragState.rowOffset);
 
-    this.updateHybridClone(snappedY);
+    this.updateHybridClone(snappedY + this.dragState.rowOffset);
   }
 
   private onMouseUp(e: MouseEvent): void {
     if (!this.dragState) return;
 
     const svgY = this.getSvgY(e.clientY);
-    const newKey = yToNearestPitch(svgY);
+    // rowOffsetを引いてpitchMap座標系に変換
+    const newKey = yToNearestPitch(svgY - this.dragState.rowOffset);
     const { noteIndex, originalKey } = this.dragState;
 
     this.removeHybridClone();

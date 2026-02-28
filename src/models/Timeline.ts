@@ -1,4 +1,4 @@
-import type { ScoreDocument } from './ScoreDocument';
+import type { ScoreDocument, NotePosition } from './ScoreDocument';
 
 export class Timeline {
   readonly noteStartTimes: number[];
@@ -32,16 +32,32 @@ export class Timeline {
     return index;
   }
 
-  getPlayheadX(elapsedSeconds: number, noteXPositions: number[]): number {
+  getPlayheadPosition(elapsedSeconds: number, notePositions: NotePosition[]): NotePosition {
     const currentIndex = this.getIndexAtTime(elapsedSeconds);
     const noteStart = this.noteStartTimes[currentIndex];
     const noteDur = this.noteDurations[currentIndex];
     const progress = (elapsedSeconds - noteStart) / noteDur;
 
-    const currentX = noteXPositions[currentIndex];
-    const nextX = currentIndex < noteXPositions.length - 1
-      ? noteXPositions[currentIndex + 1]
-      : currentX + 50;
-    return currentX + (nextX - currentX) * Math.min(progress, 1);
+    const current = notePositions[currentIndex];
+    const next = currentIndex < notePositions.length - 1
+      ? notePositions[currentIndex + 1]
+      : { x: current.x + 50, y: current.y };
+
+    // 同一行内: X補間
+    if (current.y === next.y) {
+      return {
+        x: current.x + (next.x - current.x) * Math.min(progress, 1),
+        y: current.y,
+      };
+    }
+
+    // 行またぎ: 現在行の末尾まで進んでからジャンプ
+    if (progress < 1) {
+      return {
+        x: current.x + 50 * Math.min(progress, 1),
+        y: current.y,
+      };
+    }
+    return { x: next.x, y: next.y };
   }
 }

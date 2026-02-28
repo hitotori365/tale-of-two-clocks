@@ -1,6 +1,7 @@
 import type { ScoreDocument, NotePosition } from '../models/ScoreDocument';
 import { yToNearestPitch, pitchToY, snapY } from './pitchMap';
 import { ROW_HEIGHT } from '../rendering/ScoreRenderer';
+import { $selection, selectNote, toggleNote, selectRange, selectMeasureNotes, clearSelection } from '../stores/selectionStore';
 
 const STAVE_Y_BASE = 40; // pitchMapはこの値を前提としている
 
@@ -13,18 +14,31 @@ export type NoteInteractionConfig = {
 };
 
 type DragState = {
-  noteIndex: number;
-  originalKey: string;
+  draggedIndex: number;
+  affectedIndices: number[];
+  originalKeys: Map<number, string>;
   startY: number;
   rowOffset: number; // staveY - STAVE_Y_BASE
 };
 
+type PendingClick = {
+  noteIndex: number | null;
+  startX: number;
+  startY: number;
+  shiftKey: boolean;
+  metaKey: boolean;
+};
+
 const HIT_TOLERANCE_X = 20;
 const HIT_TOLERANCE_Y = 20;
+const DRAG_THRESHOLD = 5; // px
 
 export class NoteInteraction {
   private config: NoteInteractionConfig;
   private dragState: DragState | null = null;
+  private pendingClick: PendingClick | null = null;
+  private isDragging: boolean = false;
+  private selectionAnchor: number | null = null;
 
   // hybrid mode state
   private svgOverlay: SVGSVGElement | null = null;
@@ -39,7 +53,16 @@ export class NoteInteraction {
     this.boundMouseMove = this.onMouseMove.bind(this);
     this.boundMouseUp = this.onMouseUp.bind(this);
 
-    this.config.container.addEventListener('mousedown', this.onMouseDown.bind(this));
+    // wrapperでイベントをキャッチ（chord-click-zoneがcontainerの上に被さるため）
+    this.config.wrapper.addEventListener('mousedown', this.onMouseDown.bind(this));
+
+    // 楽譜エリア外クリックで選択解除
+    document.addEventListener('mousedown', (e) => {
+      if (this.config.isPlaybackActive()) return;
+      if (!this.config.wrapper.contains(e.target as Node)) {
+        clearSelection();
+      }
+    });
   }
 
   private getSvgY(clientY: number): number {
@@ -81,62 +104,163 @@ export class NoteInteraction {
     return bestIndex;
   }
 
+  private findMeasureAtPosition(svgX: number, svgY: number): number[] | null {
+    const measures = this.config.scoreDocument.computeMeasureNoteIndices();
+    const positions = this.config.getNotePositions();
+    if (positions.length === 0) return null;
+
+    for (let m = 0; m < measures.length; m++) {
+      const noteIndices = measures[m];
+      if (noteIndices.length === 0) continue;
+
+      // この小節の最初のノートのstaveY
+      const staveY = positions[noteIndices[0]].y;
+      // Y範囲チェック
+      if (svgY < staveY || svgY > staveY + ROW_HEIGHT) continue;
+
+      // X範囲チェック: 小節の最初と最後のノートの位置から推定
+      const firstX = positions[noteIndices[0]].x - 30;
+      const lastX = positions[noteIndices[noteIndices.length - 1]].x + 30;
+      if (svgX >= firstX && svgX <= lastX) {
+        return noteIndices;
+      }
+    }
+
+    return null;
+  }
+
   private onMouseDown(e: MouseEvent): void {
     if (this.config.isPlaybackActive()) return;
+
+    // chord-popoverやbeat-indicator上のクリックは無視
+    const target = e.target as HTMLElement;
+    if (target.closest('.chord-popover') || target.closest('.beat-indicator')) return;
 
     const svgX = this.getSvgX(e.clientX);
     const svgY = this.getSvgY(e.clientY);
     const noteIndex = this.findNoteAtPosition(svgX, svgY);
 
-    if (noteIndex === null) return;
-
     e.preventDefault();
 
-    const positions = this.config.getNotePositions();
-    const rowOffset = positions[noteIndex].y - STAVE_Y_BASE;
-    const originalKey = this.config.scoreDocument.notes[noteIndex].keys[0];
-
-    this.dragState = {
+    this.pendingClick = {
       noteIndex,
-      originalKey,
+      startX: svgX,
       startY: svgY,
-      rowOffset,
+      shiftKey: e.shiftKey,
+      metaKey: e.metaKey || e.ctrlKey,
     };
+    this.isDragging = false;
 
-    this.createHybridClone(noteIndex);
+    if (noteIndex !== null) {
+      const positions = this.config.getNotePositions();
+      const rowOffset = positions[noteIndex].y - STAVE_Y_BASE;
 
-    this.config.container.style.cursor = 'grabbing';
+      const { selectedNoteIndices } = $selection.get();
+      const affectedIndices = selectedNoteIndices.has(noteIndex) && selectedNoteIndices.size > 1
+        ? Array.from(selectedNoteIndices)
+        : [noteIndex];
+
+      const originalKeys = new Map<number, string>();
+      for (const idx of affectedIndices) {
+        originalKeys.set(idx, this.config.scoreDocument.notes[idx].keys[0]);
+      }
+
+      this.dragState = {
+        draggedIndex: noteIndex,
+        affectedIndices,
+        originalKeys,
+        startY: svgY,
+        rowOffset,
+      };
+    }
+
     document.addEventListener('mousemove', this.boundMouseMove);
     document.addEventListener('mouseup', this.boundMouseUp);
   }
 
   private onMouseMove(e: MouseEvent): void {
-    if (!this.dragState) return;
+    if (!this.pendingClick) return;
 
     const svgY = this.getSvgY(e.clientY);
+
+    // ドラッグ判定: Y方向の移動量がしきい値を超えた場合
+    if (!this.isDragging) {
+      const deltaY = Math.abs(svgY - this.pendingClick.startY);
+      if (deltaY > DRAG_THRESHOLD && this.dragState) {
+        this.isDragging = true;
+        this.createHybridClone(this.dragState.draggedIndex);
+        this.config.container.style.cursor = 'grabbing';
+      } else {
+        return;
+      }
+    }
+
+    if (!this.dragState) return;
+
     // rowOffsetを引いてpitchMap座標系に変換
     const snappedY = snapY(svgY - this.dragState.rowOffset);
-
     this.updateHybridClone(snappedY + this.dragState.rowOffset);
   }
 
   private onMouseUp(e: MouseEvent): void {
-    if (!this.dragState) return;
+    document.removeEventListener('mousemove', this.boundMouseMove);
+    document.removeEventListener('mouseup', this.boundMouseUp);
 
-    const svgY = this.getSvgY(e.clientY);
-    // rowOffsetを引いてpitchMap座標系に変換
-    const newKey = yToNearestPitch(svgY - this.dragState.rowOffset);
-    const { noteIndex, originalKey } = this.dragState;
+    if (this.isDragging && this.dragState) {
+      // ドラッグ完了: 音程変更（選択中なら全選択ノートをまとめて移動）
+      const svgY = this.getSvgY(e.clientY);
+      const newKey = yToNearestPitch(svgY - this.dragState.rowOffset);
+      const { draggedIndex, affectedIndices, originalKeys } = this.dragState;
+      const draggedOriginalKey = originalKeys.get(draggedIndex)!;
 
-    this.removeHybridClone();
-    if (newKey !== originalKey) {
-      this.config.scoreDocument.setNoteKeys(noteIndex, [newKey]);
+      this.removeHybridClone();
+      if (newKey !== draggedOriginalKey) {
+        const deltaY = pitchToY(newKey) - pitchToY(draggedOriginalKey);
+        this.config.scoreDocument.batch(() => {
+          for (const idx of affectedIndices) {
+            const origKey = originalKeys.get(idx)!;
+            const newNoteKey = yToNearestPitch(pitchToY(origKey) + deltaY);
+            this.config.scoreDocument.setNoteKeys(idx, [newNoteKey]);
+          }
+        });
+      }
+
+      this.config.container.style.cursor = '';
+    } else if (this.pendingClick) {
+      // クリック: 選択操作
+      this.handleClick(this.pendingClick);
     }
 
     this.dragState = null;
-    this.config.container.style.cursor = '';
-    document.removeEventListener('mousemove', this.boundMouseMove);
-    document.removeEventListener('mouseup', this.boundMouseUp);
+    this.pendingClick = null;
+    this.isDragging = false;
+  }
+
+  private handleClick(click: PendingClick): void {
+    if (click.noteIndex === null) {
+      // ノート外クリック: 小節選択を試みる
+      const measureNotes = this.findMeasureAtPosition(click.startX, click.startY);
+      if (measureNotes) {
+        selectMeasureNotes(measureNotes);
+      } else {
+        clearSelection();
+      }
+      return;
+    }
+
+    if (click.metaKey) {
+      toggleNote(click.noteIndex);
+    } else if (click.shiftKey && this.selectionAnchor !== null) {
+      selectRange(this.selectionAnchor, click.noteIndex);
+    } else {
+      selectNote(click.noteIndex);
+      this.selectionAnchor = click.noteIndex;
+    }
+
+    // Shift+クリックではアンカーを更新しない
+    if (!click.shiftKey) {
+      this.selectionAnchor = click.noteIndex;
+    }
   }
 
   // --- Hybrid mode (SVG notehead clone) ---
@@ -201,27 +325,36 @@ export class NoteInteraction {
   }
 
   private createHybridClone(noteIndex: number): void {
-    const found = this.findNoteheadText(noteIndex);
-    if (!found) return;
-    const { text: originalText, notehead, scoreSvg } = found;
+    if (!this.dragState) return;
+    const { affectedIndices } = this.dragState;
 
-    // <text>要素をクローンし、フォント属性を明示的に解決
-    const clonedText = originalText.cloneNode(true) as SVGTextElement;
-    this.resolveInheritedFontAttrs(clonedText, notehead as Element);
-    clonedText.style.fill = 'rgba(255, 0, 0, 0.5)';
-    clonedText.style.stroke = 'none';
+    const scoreSvg = this.config.container.querySelector('svg');
+    if (!scoreSvg) return;
 
-    // 元のノートヘッドの位置を取得
-    const headBBox = notehead.getBoundingClientRect();
     const svgRect = scoreSvg.getBoundingClientRect();
-    this.cloneOriginalY = headBBox.top + headBBox.height / 2 - svgRect.top;
-
-    // オーバーレイ作成
     const overlay = this.createSvgOverlay(scoreSvg);
     const wrapperG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    wrapperG.appendChild(clonedText);
-    overlay.appendChild(wrapperG);
 
+    // ドラッグ基準ノートのY座標を記録
+    const draggedFound = this.findNoteheadText(noteIndex);
+    if (!draggedFound) return;
+    const draggedBBox = draggedFound.notehead.getBoundingClientRect();
+    this.cloneOriginalY = draggedBBox.top + draggedBBox.height / 2 - svgRect.top;
+
+    // 全対象ノートのクローンを作成
+    for (const idx of affectedIndices) {
+      const found = this.findNoteheadText(idx);
+      if (!found) continue;
+      const { text: originalText, notehead } = found;
+
+      const clonedText = originalText.cloneNode(true) as SVGTextElement;
+      this.resolveInheritedFontAttrs(clonedText, notehead as Element);
+      clonedText.style.fill = 'rgba(255, 0, 0, 0.5)';
+      clonedText.style.stroke = 'none';
+      wrapperG.appendChild(clonedText);
+    }
+
+    overlay.appendChild(wrapperG);
     this.config.wrapper.appendChild(overlay);
     this.svgOverlay = overlay;
     this.clonedNoteGroup = wrapperG;

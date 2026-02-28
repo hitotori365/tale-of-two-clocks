@@ -47,11 +47,36 @@ export class ScoreDocument {
     this.listeners.get(event)?.delete(callback);
   }
 
-  private emit(event: string): void {
+  private undoManager: import('./UndoManager').UndoManager | null = null;
+  private _suppressEmit = false;
+  private _inBatch = false;
+
+  setUndoManager(um: import('./UndoManager').UndoManager): void {
+    this.undoManager = um;
+  }
+
+  private saveUndoSnapshot(): void {
+    if (this._inBatch) return;
+    this.undoManager?.saveSnapshot();
+  }
+
+  emit(event: string): void {
+    if (this._suppressEmit) return;
     this.listeners.get(event)?.forEach(cb => cb());
   }
 
+  batch(fn: () => void): void {
+    this.saveUndoSnapshot();
+    this._inBatch = true;
+    this._suppressEmit = true;
+    fn();
+    this._inBatch = false;
+    this._suppressEmit = false;
+    this.emit('change');
+  }
+
   setChord(measureIndex: number, beatIndex: number, chord: string): void {
+    this.saveUndoSnapshot();
     if (chord === '') {
       const measure = this.chords.get(measureIndex);
       if (measure) {
@@ -140,6 +165,7 @@ export class ScoreDocument {
   }
 
   addLine(measuresPerLine: number): void {
+    this.saveUndoSnapshot();
     const currentCount = this.computeMeasureNoteIndices().length;
     const remainder = currentCount % measuresPerLine;
     // 端数がある場合: 倍数になるまでパディング + 1行分追加
@@ -164,6 +190,7 @@ export class ScoreDocument {
   }
 
   removeLine(measuresPerLine: number): void {
+    this.saveUndoSnapshot();
     const measures = this.computeMeasureNoteIndices();
     const currentCount = measures.length;
     const remainder = currentCount % measuresPerLine;
@@ -185,6 +212,7 @@ export class ScoreDocument {
 
   setNoteKeys(index: number, keys: string[]): void {
     if (index < 0 || index >= this.notes.length) return;
+    this.saveUndoSnapshot();
     this.notes[index] = { ...this.notes[index], keys };
     this.emit('change');
   }

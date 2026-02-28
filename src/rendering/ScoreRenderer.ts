@@ -72,10 +72,15 @@ function createVexNotesForMeasure(document: ScoreDocument, noteIndices: number[]
   });
 }
 
-function styleNote(note: StaveNote, isPlaying: boolean): StaveNote {
-  const style = isPlaying
-    ? { fillStyle: 'red', strokeStyle: 'red' }
-    : { fillStyle: 'black', strokeStyle: 'black' };
+function styleNote(note: StaveNote, isPlaying: boolean, isSelected: boolean = false): StaveNote {
+  let style;
+  if (isPlaying) {
+    style = { fillStyle: 'red', strokeStyle: 'red' };
+  } else if (isSelected) {
+    style = { fillStyle: '#1a73e8', strokeStyle: '#1a73e8' };
+  } else {
+    style = { fillStyle: 'black', strokeStyle: 'black' };
+  }
   note.setStyle(style);
   note.setLedgerLineStyle(style);
   return note;
@@ -124,6 +129,7 @@ export class ScoreRenderer {
     document: ScoreDocument,
     highlightIndex?: number,
     measuresPerLine: number = 4,
+    selectedIndices?: Set<number>,
   ): NotePosition[] {
     container.innerHTML = '';
     const measures = document.computeMeasureNoteIndices();
@@ -157,7 +163,8 @@ export class ScoreRenderer {
 
       for (let i = 0; i < vexNotes.length; i++) {
         const isPlaying = highlightIndex !== undefined && noteIndices[i] === highlightIndex;
-        styleNote(vexNotes[i], isPlaying);
+        const isSelected = selectedIndices?.has(noteIndices[i]) ?? false;
+        styleNote(vexNotes[i], isPlaying, isSelected);
         staveYMap.set(vexNoteIdx + i, layout.staveY);
       }
 

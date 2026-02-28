@@ -81,6 +81,9 @@ import "../styles/global.css";
       import { NoteInteraction } from "../interaction/NoteInteraction";
       import { ChordInteraction } from "../interaction/ChordInteraction";
       import { $timeSignatures, resetTimeSignatures, setTimeSignature } from "../stores/timeSignatureStore";
+      import { $selection, clearSelection } from "../stores/selectionStore";
+      import { UndoManager } from "../models/UndoManager";
+      import { KeyboardHandler } from "../interaction/KeyboardHandler";
 
       const updateButton = (
         button: HTMLButtonElement,
@@ -117,6 +120,9 @@ import "../styles/global.css";
         resetTimeSignatures();
         setTimeSignature(0, scoreDocument.metadata.timeSignature);
 
+        const undoManager = new UndoManager(scoreDocument);
+        scoreDocument.setUndoManager(undoManager);
+
         const renderer = new ScoreRenderer();
         const audioPlayer = new AudioPlayer();
         const chordClickZone = wrapper.querySelector<HTMLDivElement>('.chord-click-zone')!;
@@ -132,7 +138,8 @@ import "../styles/global.css";
 
         const rerender = () => {
           if (!isPlaying) {
-            notePositions = renderer.renderToSVG(container, scoreDocument, undefined, measuresPerLine);
+            const selectedIndices = $selection.get().selectedNoteIndices;
+            notePositions = renderer.renderToSVG(container, scoreDocument, undefined, measuresPerLine, selectedIndices);
           }
         };
 
@@ -141,6 +148,9 @@ import "../styles/global.css";
 
         // 拍子変更時の再レンダリング
         $timeSignatures.subscribe(rerender);
+
+        // 選択変更時の再レンダリング
+        $selection.subscribe(rerender);
 
         // 小節/行セレクタ変更
         measuresPerLineSelect.addEventListener('change', () => {
@@ -170,6 +180,9 @@ import "../styles/global.css";
           getNotePositions: () => notePositions,
           isPlaybackActive: () => isPlaying,
         });
+
+        // キーボードショートカット（Undo/Redo, 矢印キー）
+        new KeyboardHandler(scoreDocument, undoManager);
 
         addLineButton.addEventListener('click', () => {
           scoreDocument.addLine(measuresPerLine);
@@ -234,6 +247,7 @@ import "../styles/global.css";
         };
 
         playButton.addEventListener("click", async () => {
+          clearSelection();
           isPlaying = true;
           updateButton(playButton, "再生中...", true);
           setExportButtonsDisabled(exportButtons, true);

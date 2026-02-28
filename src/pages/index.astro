@@ -17,9 +17,13 @@ import "../styles/global.css";
 
         <div class="notation-wrapper" style="position: relative; display: inline-block;">
           <div class="notation-container"></div>
+          <div class="chord-click-zone" style="position: absolute; top: 50px; left: 10px; width: 400px; height: 30px; z-index: 5;"></div>
           <div class="playhead" style="display: none; position: absolute; top: 0; left: 0; width: 3px; height: 100%; pointer-events: none;">
             <div style="position: absolute; left: 2px; top: 0; width: 4px; height: 100%; background: rgba(0,0,0,0.15); border-radius: 2px;"></div>
             <div style="position: absolute; left: 0; top: 0; width: 3px; height: 100%; background: linear-gradient(to bottom, #FF4444, #FF0000, #CC0000); border-radius: 1px;"></div>
+          </div>
+          <div class="chord-popover" style="display: none; position: absolute; z-index: 20; background: white; border: 1px solid #ccc; border-radius: 6px; padding: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
+            <input type="text" class="chord-input" placeholder="C, Am7, G/B..." style="width: 100px; padding: 2px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; outline: none;" />
           </div>
         </div>
         <div class="mt-4 flex items-center gap-2">
@@ -59,6 +63,8 @@ import "../styles/global.css";
       import { playAllNotes, hidePlayhead } from "../playback";
       import { exportVideo, isWebCodecsSupported, type ExportFormat } from "../rendering/videoExporter";
       import { NoteInteraction } from "../interaction/NoteInteraction";
+      import { ChordInteraction } from "../interaction/ChordInteraction";
+      import { $timeSignatures, resetTimeSignatures, setTimeSignature } from "../stores/timeSignatureStore";
 
       const updateButton = (
         button: HTMLButtonElement,
@@ -88,23 +94,47 @@ import "../styles/global.css";
         const progressText = progressContainer.querySelector<HTMLParagraphElement>('.progress-text')!;
 
         const scoreDocument = ScoreDocument.createDefault();
+        // nanostoreを初期化（metadata.timeSignatureを使用）
+        resetTimeSignatures();
+        setTimeSignature(0, scoreDocument.metadata.timeSignature);
+
         const renderer = new ScoreRenderer();
         const audioPlayer = new AudioPlayer();
 
         let noteXPositions = renderer.renderToSVG(container, scoreDocument);
         let isPlaying = false;
 
-        // データ変更時の再レンダリング
-        scoreDocument.on('change', () => {
+        const rerender = () => {
           if (!isPlaying) {
             noteXPositions = renderer.renderToSVG(container, scoreDocument);
           }
-        });
+        };
+
+        // データ変更時の再レンダリング
+        scoreDocument.on('change', rerender);
+
+        // 拍子変更時の再レンダリング
+        $timeSignatures.subscribe(rerender);
 
         // NoteInteraction セットアップ
         new NoteInteraction({
           wrapper,
           container,
+          scoreDocument,
+          getNoteXPositions: () => noteXPositions,
+          isPlaybackActive: () => isPlaying,
+        });
+
+        // ChordInteraction セットアップ
+        const chordClickZone = wrapper.querySelector<HTMLDivElement>('.chord-click-zone')!;
+        const chordPopover = wrapper.querySelector<HTMLDivElement>('.chord-popover')!;
+        const chordInput = wrapper.querySelector<HTMLInputElement>('.chord-input')!;
+        new ChordInteraction({
+          wrapper,
+          container,
+          clickZone: chordClickZone,
+          popover: chordPopover,
+          input: chordInput,
           scoreDocument,
           getNoteXPositions: () => noteXPositions,
           isPlaybackActive: () => isPlaying,

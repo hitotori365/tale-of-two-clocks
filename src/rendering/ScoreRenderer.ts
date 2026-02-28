@@ -1,5 +1,6 @@
-import { Renderer, Stave, StaveNote, Voice, Formatter } from 'vexflow';
+import { Renderer, Stave, StaveNote, Voice, Formatter, Annotation } from 'vexflow';
 import type { ScoreDocument } from '../models/ScoreDocument';
+import { getTimeSignatureAtMeasure } from '../stores/timeSignatureStore';
 
 const CANVAS_WIDTH = 500;
 const CANVAS_HEIGHT = 200;
@@ -36,6 +37,22 @@ function styleAllNotes(notes: StaveNote[], playingIndex?: number): StaveNote[] {
   return notes.map((note, index) => styleNote(note, index === playingIndex));
 }
 
+function addChordAnnotations(vexNotes: StaveNote[], document: ScoreDocument): void {
+  const beatNoteMapping = document.computeBeatNoteMapping();
+  for (let m = 0; m < beatNoteMapping.length; m++) {
+    const measureChords = document.getMeasureChords(m);
+    if (measureChords.size === 0) continue;
+    for (const { beat, noteIndex } of beatNoteMapping[m]) {
+      const chordText = measureChords.get(beat);
+      if (!chordText) continue;
+      const annotation = new Annotation(chordText)
+        .setFont('Arial', 12, 'normal')
+        .setVerticalJustification(Annotation.VerticalJustify.TOP);
+      vexNotes[noteIndex].addModifier(annotation);
+    }
+  }
+}
+
 function getNoteXPositions(notes: StaveNote[]): number[] {
   return notes.map(note => {
     const staveNote = note as any;
@@ -54,13 +71,14 @@ export class ScoreRenderer {
     renderer.resize(CANVAS_WIDTH, CANVAS_HEIGHT);
     const context = renderer.getContext();
 
+    const [numBeats, beatValue] = getTimeSignatureAtMeasure(0);
     const stave = new Stave(STAVE_CONFIG.x, STAVE_CONFIG.y, STAVE_CONFIG.width);
-    const [numBeats, beatValue] = document.metadata.timeSignature;
     stave.addClef('treble').addTimeSignature(`${numBeats}/${beatValue}`);
     stave.setContext(context).draw();
 
     const vexNotes = createVexNotes(document);
     const styledNotes = styleAllNotes(vexNotes, highlightIndex);
+    addChordAnnotations(styledNotes, document);
 
     const voice = new Voice({ numBeats, beatValue });
     voice.addTickables(styledNotes);
@@ -86,13 +104,14 @@ export class ScoreRenderer {
     vfRenderer.resize(CANVAS_WIDTH, CANVAS_HEIGHT);
     const vfContext = vfRenderer.getContext();
 
+    const [numBeats, beatValue] = getTimeSignatureAtMeasure(0);
     const stave = new Stave(STAVE_CONFIG.x, STAVE_CONFIG.y, STAVE_CONFIG.width);
-    const [numBeats, beatValue] = document.metadata.timeSignature;
     stave.addClef('treble').addTimeSignature(`${numBeats}/${beatValue}`);
     stave.setContext(vfContext).draw();
 
     const vexNotes = createVexNotes(document);
     const styledNotes = styleAllNotes(vexNotes, highlightIndex);
+    addChordAnnotations(styledNotes, document);
 
     const voice = new Voice({ numBeats, beatValue });
     voice.addTickables(styledNotes);

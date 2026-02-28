@@ -1,7 +1,7 @@
 import type { ScoreDocument, NotePosition } from '../models/ScoreDocument';
 import { yToNearestPitch, pitchToY, snapY } from './pitchMap';
 import { ROW_HEIGHT } from '../rendering/ScoreRenderer';
-import { $selection, selectNote, toggleNote, selectRange, selectMeasureNotes, clearSelection } from '../stores/selectionStore';
+import { $selection, selectNote, toggleNote, selectRange, clearSelection } from '../stores/selectionStore';
 
 const STAVE_Y_BASE = 40; // pitchMapはこの値を前提としている
 
@@ -56,7 +56,7 @@ export class NoteInteraction {
     // wrapperでイベントをキャッチ（chord-click-zoneがcontainerの上に被さるため）
     this.config.wrapper.addEventListener('mousedown', this.onMouseDown.bind(this));
 
-    // 楽譜エリア外クリックで選択解除
+    // 選択中ノート以外のクリックで選択解除
     document.addEventListener('mousedown', (e) => {
       if (this.config.isPlaybackActive()) return;
       if (!this.config.wrapper.contains(e.target as Node)) {
@@ -102,31 +102,6 @@ export class NoteInteraction {
     if (Math.abs(svgY - noteY) > HIT_TOLERANCE_Y) return null;
 
     return bestIndex;
-  }
-
-  private findMeasureAtPosition(svgX: number, svgY: number): number[] | null {
-    const measures = this.config.scoreDocument.computeMeasureNoteIndices();
-    const positions = this.config.getNotePositions();
-    if (positions.length === 0) return null;
-
-    for (let m = 0; m < measures.length; m++) {
-      const noteIndices = measures[m];
-      if (noteIndices.length === 0) continue;
-
-      // この小節の最初のノートのstaveY
-      const staveY = positions[noteIndices[0]].y;
-      // Y範囲チェック
-      if (svgY < staveY || svgY > staveY + ROW_HEIGHT) continue;
-
-      // X範囲チェック: 小節の最初と最後のノートの位置から推定
-      const firstX = positions[noteIndices[0]].x - 30;
-      const lastX = positions[noteIndices[noteIndices.length - 1]].x + 30;
-      if (svgX >= firstX && svgX <= lastX) {
-        return noteIndices;
-      }
-    }
-
-    return null;
   }
 
   private onMouseDown(e: MouseEvent): void {
@@ -238,13 +213,7 @@ export class NoteInteraction {
 
   private handleClick(click: PendingClick): void {
     if (click.noteIndex === null) {
-      // ノート外クリック: 小節選択を試みる
-      const measureNotes = this.findMeasureAtPosition(click.startX, click.startY);
-      if (measureNotes) {
-        selectMeasureNotes(measureNotes);
-      } else {
-        clearSelection();
-      }
+      clearSelection();
       return;
     }
 
